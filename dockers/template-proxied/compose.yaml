@@ -1,0 +1,58 @@
+services:
+  contained:
+    container_name: ${VARIANT}-contained
+    image: localhost/${VARIANT}-contained:latest
+    build:
+      context: ../..
+      dockerfile: dockers/${VARIANT}/Dockerfile
+      args:
+        - PROXY_HOSTNAME=contained-proxy
+      secrets:
+        - user_password
+    # ports:
+    #   - "2222:22" # Allows SSH from host
+    volumes:
+      - ./projects:/home/appuser/projects:rw
+      - ../../config:/home/appuser/config:rw
+    networks:
+      contained-net:
+        ipv4_address: ${NETWORK}.5
+    environment:
+      - http_proxy=http://contained-proxy:3128
+      - https_proxy=http://contained-proxy:3128
+      - no_proxy=localhost,127.0.0.1
+    dns:
+      - ${NETWORK}.50
+    restart: unless-stopped
+    secrets:
+      - user_password
+
+  contained-proxy:
+    image: localhost/${VARIANT}-contained-proxy:latest
+    build:
+      context: ../../proxy
+      dockerfile: Dockerfile
+    container_name: ${VARIANT}-contained-proxy
+    networks:
+      contained-net:
+        ipv4_address: ${NETWORK}.50
+      internet-net:
+    volumes:
+      - ./proxy/squid.conf:/etc/squid/squid.conf:ro
+    restart: unless-stopped
+    user: "root"
+
+networks:
+  contained-net:
+    name: ${VARIANT}-contained-net
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${NETWORK}.0/24
+  internet-net:
+    external: true
+
+secrets:
+  user_password:
+    file: ../../my_password.txt
