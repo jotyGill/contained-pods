@@ -1,0 +1,88 @@
+# =============================================================================
+# Squid Default Config - Permissive Development Rules
+# =============================================================================
+# Allows common development domains: code hosts, package registries,
+# documentation sites, and common update servers.
+#
+# This is a reasonable default for most development work while still
+# providing visibility and logging of all outbound traffic.
+# =============================================================================
+
+visible_hostname squid-proxy
+http_port 3128
+coredump_dir /var/spool/squid
+
+# ============================================================
+# ALLOWED DOMAINS - Development Friendly
+# ============================================================
+
+# Code hosting
+acl allowed dstdomain .github.com
+acl allowed dstdomain .gitlab.com
+acl allowed dstdomain .bitbucket.org
+
+# Package registries
+acl allowed dstdomain .npmjs.com
+acl allowed dstdomain .yarnpkg.com
+acl allowed dstdomain .registry.npmjs.org
+acl allowed dstdomain .pypi.org
+acl allowed dstdomain .pythonhosted.org
+acl allowed dstdomain .crates.io
+acl allowed dstdomain .rubygems.org
+acl allowed dstdomain .maven.org
+
+# OS updates and repositories
+acl allowed dstdomain .ubuntu.com
+acl allowed dstdomain .archive.ubuntu.com
+acl allowed dstdomain .security.ubuntu.com
+acl allowed dstdomain .debian.org
+acl allowed dstdomain .ftp.debian.org
+
+# Documentation and CDN
+acl allowed dstdomain .docs.python.org
+acl allowed dstdomain .nodejs.org
+acl allowed dstdomain .cloudflare.com
+acl allowed dstdomain .fastly.net
+
+# AI/LLM APIs
+acl allowed dstdomain .api.z.ai
+acl allowed dstdomain .anthropic.com
+acl allowed dstdomain .openai.com
+
+# Private/local network (blocked by default)
+acl localnet src 10.0.0.0/8
+acl localnet src 172.16.0.0/12
+acl localnet src 192.168.0.0/16
+
+# Standard ports
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 443
+acl CONNECT method CONNECT
+
+# ============================================================
+# ACCESS RULES
+# ============================================================
+
+# Allow listed domains
+http_access allow allowed Safe_ports
+http_access allow allowed SSL_ports CONNECT
+
+# Deny private networks
+http_access deny localnet
+
+# Deny unsafe ports
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+
+# Deny everything else
+http_access deny all
+
+# ============================================================
+# LOGGING
+# ============================================================
+access_log /var/log/squid/access.log squid
+
+# Cache settings
+cache_mem 16 MB
+cache_dir ufs /var/spool/squid 100 16 256

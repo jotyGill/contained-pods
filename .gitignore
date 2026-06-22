@@ -1,0 +1,25 @@
+# Secrets
+my_password.txt
+
+# User project data (keep dir, ignore files)
+dockers/*/projects/*
+dockers/*/projects/.**
+
+# Trash
+trash/
+
+# Docker build artifacts
+**/node_modules/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
