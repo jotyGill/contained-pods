@@ -16,14 +16,14 @@ Docker containers with SSH access and network isolation via Squid proxy. Each co
 ```bash
 cd contained-dockers
 
-##add your publick key you want to use to ssh into containers with
-nano authorized_keys 
+# Add your public key for SSH access to containers
+nano authorized_keys
 
-#Create a text file with a password to be used for container appuser account
+# Create a password file for the container appuser account
 nano my_password
 ```
 
-### 1. Build the base image
+### 2. Build the base image
 
 ```bash
 cd contained-dockers
@@ -32,48 +32,41 @@ sudo docker compose build
 
 This builds `localhost/contained-dockers:latest` — all variants inherit from this.
 
-## 2. Creating a New Variant
+### 3. Create a new variant
 
 ```bash
 cp -r dockers/template-proxied dockers/llmagents
 cd dockers/llmagents
 ```
 
+Then configure the variant:
 1. Edit `.env` with `VARIANT=llmagents` and unique `NETWORK=10.88.X`
 2. Edit `Dockerfile` — install your software / dependencies
 3. ⚠️ **MUST REVIEW** `proxy/squid.conf` — add the domains this variant needs to access
 
-### 2. Configure your variant
-
-Each variant lives in `dockers/<variant-name>/`. Example for zed:
-
-**Create `.env` file** (VARIANT + NETWORK unique per variant):
-```bash
-cd dockers/zed
+Example `.env` file (VARIANT + NETWORK must be unique per variant):
 ```
-Then create `.env`:
-```
-VARIANT=zed
+VARIANT=llmagents
 NETWORK=10.88.1
 ```
 
-### 3. Build & run the variant
+### 4. Build and run the variant
 
 ```bash
 cd dockers/<variant-name>
 sudo docker compose up -d --build
 ```
 
-### 4. SSH into the container
+### 5. SSH into the container
 
 Each container gets a **hardcoded IP address** based on its `NETWORK` variable:
-- Container: `${NETWORK}.5` (e.g., `10.88.1.5` for zed)
-- Proxy: `${NETWORK}.50` (e.g., `10.88.1.50` for zed)
+- Container: `${NETWORK}.5` (e.g., `10.88.1.5` for llmagents)
+- Proxy: `${NETWORK}.50` (e.g., `10.88.1.50` for llmagents)
 
 SSH commands:
 
 ```bash
-# For zed (NETWORK=10.88.1)
+# For llmagents (NETWORK=10.88.1)
 ssh -i ~/.ssh/contained-dockers_rsa appuser@10.88.1.5
 
 # For opencode (NETWORK=10.88.2)
