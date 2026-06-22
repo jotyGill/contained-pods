@@ -1,6 +1,9 @@
 # Secrets
 my_password.txt
 
+# Shared configuration data (mounted into containers at runtime)
+config/
+
 # User project data (keep dir, ignore files)
 dockers/*/projects/*
 dockers/*/projects/.**

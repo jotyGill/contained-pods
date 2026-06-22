@@ -12,6 +12,12 @@ Docker containers with SSH access and network isolation via Squid proxy. Each co
 
 ## Setup
 
+### 1. Setup SSH Authorized_keys and Password for the containers
+```bash
+cd /home/jg/Nextcloud2/programming/dockers/contained-dockers
+sudo docker compose build
+```
+
 ### 1. Build the base image
 
 ```bash
@@ -62,27 +68,22 @@ ssh -i ~/.ssh/contained-dockers_rsa appuser@10.88.2.5
 
 ## Managing Variants
 
-### Starting / Running
+### Changing Proxy Restrictions
+First edit the <variant> squid.conf file to allow whatever access it needs then restart the proxy container to apply the changes.
 ```bash
-cd dockers/<variant-name>
-sudo docker compose up -d --build
+sudo docker restart <variant>-contained-proxy
 ```
 
-### Stopping
-To stop a variant's containers (container + proxy):
+### Starting / Stopping
+To start/stop variant containers (container + proxy).
+
 ```bash
 cd dockers/<variant-name>
-sudo docker compose stop
+sudo docker compose start/stop
 
 ## To Remove Completely
 cd dockers/<variant-name>
 sudo docker compose down
-```
-
-### Checking Status
-See all running containers across all variants:
-```bash
-sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 ---
 
