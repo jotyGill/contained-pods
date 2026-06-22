@@ -14,18 +14,34 @@ Docker containers with SSH access and network isolation via Squid proxy. Each co
 
 ### 1. Setup SSH Authorized_keys and Password for the containers
 ```bash
-cd /home/jg/Nextcloud2/programming/dockers/contained-dockers
-sudo docker compose build
+cd contained-dockers
+
+##add your publick key you want to use to ssh into containers with
+nano authorized_keys 
+
+#Create a text file with a password to be used for container appuser account
+nano my_password
 ```
 
 ### 1. Build the base image
 
 ```bash
-cd /home/jg/Nextcloud2/programming/dockers/contained-dockers
+cd contained-dockers
 sudo docker compose build
 ```
 
 This builds `localhost/contained-dockers:latest` — all variants inherit from this.
+
+## 2. Creating a New Variant
+
+```bash
+cp -r dockers/template-proxied dockers/llmagents
+cd dockers/llmagents
+```
+
+1. Edit `.env` with `VARIANT=llmagents` and unique `NETWORK=10.88.X`
+2. Edit `Dockerfile` — install your software / dependencies
+3. ⚠️ **MUST REVIEW** `proxy/squid.conf` — add the domains this variant needs to access
 
 ### 2. Configure your variant
 
@@ -87,17 +103,6 @@ sudo docker compose down
 ```
 ---
 
-## Creating a New Variant
-
-```bash
-cp -r dockers/zed dockers/newapp
-cd dockers/newapp
-```
-
-1. Create `.env` with `VARIANT=newapp` and unique `NETWORK=10.88.X`
-2. Edit `Dockerfile` — install your app instead of Zed dependencies
-3. ⚠️ **MUST REVIEW** `proxy/squid.conf` — add the domains this variant needs to access
-4. Run: `sudo docker compose up -d --build`
 
 ---
 
