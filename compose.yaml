@@ -1,12 +1,9 @@
 services:
-  contained-dockers:
-    image: localhost/contained-dockers:latest
+  contained-pods:
+    image: localhost/contained-pods:latest
     build:
       context: .
       dockerfile: Dockerfile
-      secrets:
-        - user_password
-
-secrets:
-  user_password:
-    file: ./my_password.txt
+      network: host
+      args:
+        - USER_PASSWORD=${USER_PASSWORD}

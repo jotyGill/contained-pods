@@ -8,6 +8,9 @@ config/.*
 # User project data (keep dir, ignore files)
 dockers/*/projects/*
 dockers/*/projects/.**
+dockers/*/proxy/logs/*
+dockers/*/proxy/logs/.**
+
 dockers/opencode/
 dockers/zed/
 dockers/llmbencher/

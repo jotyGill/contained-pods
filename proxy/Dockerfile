@@ -1,7 +1,7 @@
-FROM ubuntu/squid:latest
+FROM docker.io/ubuntu/squid:latest
 
 # Install dnsmasq for DNS resolution
-RUN apt-get update && apt-get install -y --no-install-recommends dnsmasq && \
+RUN apt-get update && apt-get install -y --no-install-recommends dnsmasq iproute2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy entrypoint script

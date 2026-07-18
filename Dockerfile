@@ -4,8 +4,9 @@ FROM ubuntu:26.04
 ARG THE_USER_NAME=appuser
 ARG THE_USER_UID=1000
 ARG THE_USER_GID=1000
+ARG USER_PASSWORD=
 
-LABEL maintainer="contained-dockers"
+LABEL maintainer="contained-pods"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -50,16 +51,15 @@ RUN curl -LO https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripg
     dpkg -i ripgrep_14.1.1-1_amd64.deb && \
     rm ripgrep_14.1.1-1_amd64.deb
 
-# Create user and mount the secret, read it, and use it
-RUN --mount=type=secret,id=user_password \
-    USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
+# Create user and set password from build arg
+RUN USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
     if [ -n "${USER_TO_DELETE}" ]; then \
         userdel -r ${USER_TO_DELETE} 2>/dev/null || true; \
         groupdel ${USER_TO_DELETE} 2>/dev/null || true; \
     fi && \
     groupadd -g ${THE_USER_GID} ${THE_USER_NAME} && \
     useradd -m -d "/home/${THE_USER_NAME}" -s /bin/bash -u ${THE_USER_UID} -g ${THE_USER_GID} ${THE_USER_NAME} && \
-    echo "${THE_USER_NAME}:$(cat /run/secrets/user_password)" | chpasswd
+    echo "${THE_USER_NAME}:${USER_PASSWORD}" | chpasswd
 
 # Setup SSH and generate host keys (must be done as root during build)
 RUN mkdir -p /var/run/sshd /etc/ssh /home/${THE_USER_NAME}/.ssh && \
@@ -87,9 +87,13 @@ RUN groupadd -f sudo && \
     echo "${THE_USER_NAME} ALL=(ALL) ALL" > /etc/sudoers.d/${THE_USER_NAME} && \
     chmod 440 /etc/sudoers.d/${THE_USER_NAME}
 
+# Copy DNS isolation entrypoint script
+COPY set-proxy-dns.sh /usr/local/bin/set-proxy-dns.sh
+RUN chmod +x /usr/local/bin/set-proxy-dns.sh
+
 # Expose SSH port (standard)
 EXPOSE 22
 
-# Start SSH daemon (sshd needs root to bind to port and function)
+# Start SSH daemon via DNS isolation entrypoint
 USER root
-ENTRYPOINT ["/usr/sbin/sshd", "-D"]
+ENTRYPOINT ["/usr/local/bin/set-proxy-dns.sh", "/usr/sbin/sshd", "-D"]
