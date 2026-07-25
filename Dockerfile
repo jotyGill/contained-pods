@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 COPY sshd_config.template /tmp/sshd_config.template
 COPY authorized_keys /tmp/authorized_keys
 
-# Install minimal system dependencies
+# Install minimal useful dependencies; keeping image around ~330MB
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -24,11 +24,6 @@ RUN apt-get update && \
         zsh \
         wget \
         ca-certificates \
-        gettext-base \
-        autoconf \
-        build-essential \
-        nodejs \
-        npm \
         bat \
         sudo \
         fd-find \
@@ -36,15 +31,42 @@ RUN apt-get update && \
         python3 \
         python3-pip \
         python3-venv \
-        python3-dev \
-        python3-pytest \
         python3-requests \
-        python3-virtualenv \
-        python3-yaml \
-        python3-dotenv \
-        python3-mypy \
+        pipx \
     && rm -rf /var/lib/apt/lists/* && \
     ln -s $(which fdfind) /usr/local/bin/fd
+
+# Old more dependencies
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#         curl \
+#         git \
+#         openssh-server \
+#         nano \
+#         zsh \
+#         wget \
+#         ca-certificates \
+#         gettext-base \
+#         autoconf \
+#         build-essential \
+#         nodejs \
+#         npm \
+#         bat \
+#         sudo \
+#         fd-find \
+#         fzf \
+#         python3 \
+#         python3-pip \
+#         python3-venv \
+#         python3-dev \
+#         python3-pytest \
+#         python3-requests \
+#         python3-virtualenv \
+#         python3-yaml \
+#         python3-dotenv \
+#         python3-mypy \
+#     && rm -rf /var/lib/apt/lists/* && \
+#     ln -s $(which fdfind) /usr/local/bin/fd
 
 # Install ripgrep (specific version via .deb)
 RUN curl -LO https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep_15.2.0-1_amd64.deb && \
