@@ -6,7 +6,7 @@ services:
     build:
       context: ../..
       dockerfile: dockers/${VARIANT}/Dockerfile
-      network: host
+      network: host            ## this host network link is only for build time installs
       args:
         - PROXY_HOSTNAME=${VARIANT}-contained-proxy
     # ports:
@@ -30,13 +30,11 @@ services:
     build:
       context: ../../proxy
       dockerfile: Dockerfile
-      network: host
+      network: host          ## this host network link is only for build time installs
     container_name: ${VARIANT}-contained-proxy
     networks:
       - contained-net
       - internet-net
-    cap_add:
-      - NET_BIND_SERVICE
     volumes:
       - ./proxy/squid.conf:/etc/squid/squid.conf:ro
       - ./proxy/logs:/var/log/proxy-logs:rw
