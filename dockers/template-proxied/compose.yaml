@@ -2,57 +2,52 @@ services:
   contained:
     container_name: ${VARIANT}-contained
     image: localhost/${VARIANT}-contained:latest
+    userns_mode: keep-id
     build:
       context: ../..
       dockerfile: dockers/${VARIANT}/Dockerfile
+      network: host
       args:
-        - PROXY_HOSTNAME=contained-proxy
-      secrets:
-        - user_password
+        - PROXY_HOSTNAME=${VARIANT}-contained-proxy
     # ports:
     #   - "2222:22" # Allows SSH from host
     volumes:
       - ./projects:/home/appuser/projects:rw
       - ../../config:/home/appuser/config:rw
     networks:
-      contained-net:
-        ipv4_address: ${NETWORK}.5
+      - contained-net
     environment:
-      - http_proxy=http://contained-proxy:3128
-      - https_proxy=http://contained-proxy:3128
+      - PROXY_NAME=${VARIANT}-contained-proxy
+      - http_proxy=http://${VARIANT}-contained-proxy:3128
+      - https_proxy=http://${VARIANT}-contained-proxy:3128
       - no_proxy=localhost,127.0.0.1
-    dns:
-      - ${NETWORK}.50
     restart: unless-stopped
-    secrets:
-      - user_password
+    depends_on:
+      - contained-proxy
 
   contained-proxy:
     image: localhost/${VARIANT}-contained-proxy:latest
     build:
       context: ../../proxy
       dockerfile: Dockerfile
+      network: host
     container_name: ${VARIANT}-contained-proxy
     networks:
-      contained-net:
-        ipv4_address: ${NETWORK}.50
-      internet-net:
+      - contained-net
+      - internet-net
+    cap_add:
+      - NET_BIND_SERVICE
     volumes:
       - ./proxy/squid.conf:/etc/squid/squid.conf:ro
+      - ./proxy/logs:/var/log/proxy-logs:rw
     restart: unless-stopped
-    user: "root"
 
 networks:
   contained-net:
     name: ${VARIANT}-contained-net
     driver: bridge
     internal: true
-    ipam:
-      config:
-        - subnet: ${NETWORK}.0/24
+    labels:
+      com.docker.compose.network: ${VARIANT}-contained-net
   internet-net:
     external: true
-
-secrets:
-  user_password:
-    file: ../../my_password.txt

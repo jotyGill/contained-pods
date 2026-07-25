@@ -1,7 +1,7 @@
-FROM localhost/contained-dockers:latest
+FROM localhost/contained-pods:latest
 
-# Build argument for proxy hostname (defaults to contained-proxy)
-ARG PROXY_HOSTNAME=contained-proxy
+# Build argument for proxy hostname (per-variant, e.g. agents-contained-proxy)
+ARG PROXY_HOSTNAME=${VARIANT}-contained-proxy
 
 USER root
 
