@@ -1,111 +1,216 @@
 # Contained Pods
 
-Podman containers with SSH access and network isolation via Squid proxy. Each container is fully isolated from the internet unless explicitly allowed through its proxy to reach specific hosts/domains. Core idea is to easily create isolated containers (for LLM agents/harnesses) that only have access to the specific hosts such as LLM API endpoints (optionally repos such as Ubuntu apt, python pip, npm etc) and nothing else. Data can be shared between a given container and the host via a shared folder, so you can view/edit/use files as needed. A ./config folder is setup to share configuration files with these containers for ease of config maintainability. The software inside the container runs as a non-root user. Sudo access is available using a custom password (for things like `apt install`). SSH is only exposed on the internal container network interface.
+Podman containers with network isolation via Squid proxy. Each container is fully isolated from the internet unless explicitly allowed through its proxy to reach specific hosts/domains. Core idea is to easily create isolated containers (for LLM agents/harnesses) that only have access to the specific hosts such as LLM API endpoints (optionally repos such as Ubuntu apt, python pip, npm etc) and nothing else. Data can be shared between a given container and the host via a shared folder, so you can view/edit/use files as needed. A ./config folder is setup to share configuration files with these containers for ease of config maintainability. The software inside the container runs as a non-root user. Sudo access is available using a custom password (for things like `apt install`). Containers are accessed directly via `podman exec`.
 
 ## Prerequisites
 
-- **Podman** and **podman-compose** `sudo apt install podman podman-compose`
-- Your chosen container password, exported as the `USER_PASSWORD` env var at build time. The password is set for the `appuser` account used for `sudo` or SSH.
-- Optional SSH key pair (e.g. `~/.ssh/contained-dockers_rsa`)
+- **Podman** and **podman-compose**: `sudo apt install podman podman-compose`
+- Your chosen container password, exported as the `USER_PASSWORD` env var at build time. The password is set for the `appuser` account used for `sudo`.
+
 ---
 
-## Setup
+## Setup Guide
 
-### 1. Setup SSH Authorized_keys and Password for the containers
+This guide walks you through creating and running an isolated container variant from start to finish.
+
+### Overview
+
+1. Set the `USER_PASSWORD` environment variable
+2. Build the base image (`localhost/contained-pods:latest`)
+3. Create the shared `internet-net` network (one-time)
+4. Create a new variant (or use the existing `agents`)
+5. Configure the variant's `.env` file
+6. Review and customize the proxy allowlist (`proxy/squid.conf`)
+7. Build and start the variant
+8. Verify the container is running
+9. Access the container
+
+---
+
+### 1. Set the Container Password
+
+The `USER_PASSWORD` environment variable is used during the base image build to set the password for the `appuser` account. This password is also used for `sudo` access.
 ```bash
-# 1. Set the password for the container appuser account (use a real value)
+# Set the password for your containers 'appuser'
 export USER_PASSWORD='your_password_here'
-
-# 2. Build the base image FIRST — variant pods (e.g. agents) depend on it
-cd contained-dockers
-podman-compose -f compose.yaml build
-
-# 3. Create the shared external internet network (one-time)
-podman network create internet-net
-
-# 4. Build & run a variant
-cd dockers/agents
-podman-compose up -d
-
-# 5. Drop into the container as appuser
-podman exec -it --user appuser agents-contained zsh
 ```
 
-### Step-by-step detail
+---
 
-**1. Set `USER_PASSWORD`**
-This is consumed by the root `compose.yaml` build arg and baked into the base image as the `appuser` password. Keep it in your shell session (or a `.env` you source — do **not** commit it).
+### 2. Build the Base Image
 
-**2. Build the base image**
+The base image (`localhost/contained-pods:latest`) must be built first, as all variant Dockerfiles inherit from it. Run this from the project root (the `contained-dockers` directory):
 ```bash
-cd contained-dockers
 podman-compose -f compose.yaml build
 ```
-This builds `localhost/contained-pods:latest`. All variants (`dockers/<variant>/Dockerfile`) inherit `FROM localhost/contained-pods:latest`, so this **must** be built before any variant.
 
-**3. Create `internet-net`** Only need to do this once
-`internet-net` is referenced as an `external` network by every variant's proxy but is not defined inside a variant compose file, so it must exist on the host:
+---
+
+### 3. Create the Internet Network (One-Time Setup)
+
+The `internet-net` network is an external network that allows the proxy containers to reach the internet.
 ```bash
+# Only needs to be done once
 podman network create internet-net
 ```
 
-**4. Build & run a new variant**
+---
+
+### 4. Create or Choose a Variant
+
+#### Option A: Use an Existing Variant
+
+If you want to use a pre-existing variant `agents`, its `VARIANT`, skip to [Step 6](#6-review-and-customize-the-proxy-allowlist) and review/customize its `proxy/squid.conf` as needed.
+
+```bash
+# List available variants
+ls dockers/
+```
+
+#### Option B: Create a New Variant from Template
+
+To create a new isolated container, copy the `template-proxied` directory and customize it:
+
+```bash
+# Copy the template
+cp -r dockers/template-proxied dockers/myvariant
+```
+
+The copy becomes your new variant. Continue to [Step 5](#5-configure-the-variant-env-file) and [Step 6](#6-review-and-customize-the-proxy-allowlist) to configure it.
+
+---
+
+### 5. Configure the Variant (`.env` file)
+
+Set your `VARIANT` name in the variant's `.env` file:
+
 ```bash
 cd dockers/<variant-name>
-podman-compose up -d
+nano .env
 ```
-This builds the variant image and starts both `<variant>-contained` and `<variant>-contained-proxy`.
 
-**5. Get a shell in the container**
+```env
+VARIANT=myvariant
+```
+
+The `VARIANT` value determines:
+- Container name: `${VARIANT}-contained`
+- Proxy name: `${VARIANT}-contained-proxy`
+- Network name: `${VARIANT}-contained-net`
+- Image names: `localhost/${VARIANT}-contained:latest` and `localhost/${VARIANT}-contained-proxy:latest`
+
+Optionally edit the variant's `Dockerfile` to add your own software/dependencies.
+
+---
+
+### 6. Review and Customize the Proxy Allowlist (`proxy/squid.conf`)
+
+**REQUIRED**: Define which domains/IPs this variant can access. By default, all outbound traffic is blocked.
+
+```bash
+cd dockers/<variant-name>
+nano proxy/squid.conf
+```
+
+Example allowlist:
+```conf
+# Allow access to GitHub
+acl allowed dstdomain .github.com
+http_access allow allowed
+
+# Allow access to PyPI
+acl allowed dstdomain .pypi.org
+acl allowed dstdomain .pythonhosted.org
+http_access allow allowed
+
+# Deny everything else
+http_access deny all
+```
+
+---
+
+### 7. Build and Start the Variant
+
+Build the variant image and start both the container and its proxy:
+
+```bash
+cd dockers/<variant-name>
+podman-compose up -d --build
+```
+
+---
+
+### 8. Verify Everything is Running
+
+Check that both containers are up and running:
+
+```bash
+# List all running containers
+podman ps -a
+
+# You should see both:
+# - <variant>-contained
+# - <variant>-contained-proxy
+```
+
+If the container can't reach allowed domains, check:
+1. Is the proxy running? (`podman ps | grep proxy`)
+2. Does `squid.conf` have the correct allowlist entries?
+3. Was the proxy restarted after editing `squid.conf`?
+
+---
+
+### 9. Access the Container
+
+Access the container directly using `podman exec` (no SSH needed):
+
 ```bash
 podman exec -it --user appuser <variant>-contained zsh
 ```
 
-Then configure the variant:
-1. Edit `.env` with `VARIANT=llmagents`
-2. Edit `Dockerfile` — install your software / dependencies
-3. ⚠️ **MUST REVIEW** `proxy/squid.conf` — add the domains/IP and ports this variant needs to access
-
-Example `.env` file:
-```
-VARIANT=llmagents
-```
-##TODO Example squidproxy section update
-
-### 4. Build and run the variant
-
-```bash
-cd dockers/<variant-name>
-podman-compose up -d
-```
-
+Once inside, you can:
+- Access your projects at `/home/appuser/projects`
+- Use shared configs at `/home/appuser/config`
+- Use `sudo` with the password you set in Step 1
+- Install packages (in the template config apt sources are allowed (nothing else is allowed by default))
 
 ---
 
 ## Managing Variants
 
-### Changing Proxy Restrictions
-First edit the `<variant>/proxy/squid.conf` file to allow whatever access it needs, then restart the proxy container to apply the changes.
+### Changing Proxy Rules
+
+After editing `proxy/squid.conf`, restart those pods to apply changes:
+
 ```bash
 cd dockers/<variant-name>
 podman-compose restart
 ```
 
 ### Starting / Stopping
-To start/stop variant containers (container + proxy).
 
 ```bash
 cd dockers/<variant-name>
-podman-compose stop
-# ... later
-podman-compose up -d
 
-## To Remove Completely
-cd dockers/<variant-name>
+# Stop containers (preserves data)
+podman-compose stop
+
+# Start again
+podman-compose start
+
+# Stop and remove containers (preserves images and volumes)
 podman-compose down
 ```
----
 
+### Rebuilding After Changes
+
+If you modify the variant's `Dockerfile`:
+
+```bash
+# Rebuild variant
+cd dockers/<variant-name>
+podman-compose up -d --build
+```
 
 ---
 
@@ -113,30 +218,31 @@ podman-compose down
 
 ```
 contained-dockers/
-├── Dockerfile          # Base image (SSH, tools, user setup)
-├── compose.yaml        # Builds base image (needs USER_PASSWORD build arg)
-├── set-proxy-dns.sh    # DNS-isolation entrypoint for the base image
-├── config/             # Shared configs mounted to /home/appuser/config
-│   └── ...             # Shell settings, aliases, env vars, etc.
-├── proxy/              # Squid + dnsmasq proxy image
-│   └── Dockerfile      # Squid proxy image (runs dnsmasq + squid)
+├── Dockerfile                 # Base image (SSH, tools, user setup)
+├── compose.yaml               # Builds base image (needs USER_PASSWORD build arg)
+├── set-proxy-dns.sh           # DNS-isolation entrypoint for the base image
+├── config/                    # Shared configs mounted to /home/appuser/config
+│   └── ...                    # Shell settings, aliases, env vars, etc.
+├── proxy/
+│   └── Dockerfile             # Squid proxy image (runs dnsmasq + squid)
 └── dockers/
-    ├── template-proxied/  # TEMPLATE: copy this to create a new variant
-    │   ├── .env           # VARIANT=template-proxied
-    │   ├── Dockerfile     # Variant dockerfile (FROM localhost/contained-pods:latest)
+    ├── template-proxied/      # TEMPLATE: copy this to create a new variant
+    │   ├── .env               # VARIANT=template-proxied
+    │   ├── Dockerfile         # Variant dockerfile (FROM localhost/contained-pods:latest)
     │   ├── compose.yaml
     │   ├── proxy/
-    │   │   ├── squid.conf # ⚠️ MUST REVIEW: Allowlist domains for this variant
-    │   │   └── logs/      # Mounted proxy logs (git ignored)
-    │   └── projects/      # Your code projects (git ignored)
-    └── agents/            # Example variant: LLM coding agents
-        ├── .env          # VARIANT=agents
-        ├── Dockerfile
-        ├── compose.yaml
-        ├── proxy/
-        │   ├── squid.conf
-        │   └── logs/
-        └── projects/
+    │   │   ├── squid.conf     # ⚠️ MUST REVIEW: Allowlist domains for this variant
+    │   │   └── logs/          # Mounted proxy logs (git ignored)
+    │   └── projects/          # Your code projects (git ignored)
+    ├── agents/                # Example variant: LLM coding agents
+    │   ├── .env               # VARIANT=agents
+    │   ├── Dockerfile
+    │   ├── compose.yaml
+    │   ├── proxy/
+    │   │   ├── squid.conf
+    │   │   └── logs/
+    │   └── projects/
+    └── ...                    # Other variants
 ```
 
 ---
@@ -145,15 +251,15 @@ contained-dockers/
 
 Each variant uses two networks to enforce isolation:
 
-- **Internal network** (`internal: true`) — container can only reach its own squid proxy, not the internet
+- **Internal network** (`internal: true`) — container can only reach its own squid proxy, not the internet directly
 - **Internet network** (`external: true`) — only the squid proxy connects here to forward allowed traffic
 
-Container → Proxy (allowed domains) → Internet
+Container → Proxy (allowed domains/IPs/ports only) → Internet
 
 ### Naming Conventions
 
-| Component | Name | Example (agents) |
-|-----------|------|-------------------------------|
+| Component | Name Pattern | Example (agents) |
+|-----------|--------------|------------------|
 | Container | `${VARIANT}-contained` | `agents-contained` |
 | Proxy | `${VARIANT}-contained-proxy` | `agents-contained-proxy` |
 | Internal net | `${VARIANT}-contained-net` | `agents-contained-net` |
@@ -163,14 +269,8 @@ Container → Proxy (allowed domains) → Internet
 
 ### IP Addressing
 
-Each variant runs on its own `${VARIANT}-contained-net` subnet. IPs are assigned automatically by Podman To find a container's assigned IP:
+Each variant runs on its own `${VARIANT}-contained-net` subnet. IPs are assigned automatically by Podman. The container locates its proxy by hostname via DNS isolation (see `set-proxy-dns.sh`).
 
-```bash
-podman inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${VARIANT}-contained
-podman inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${VARIANT}-contained-proxy
-```
-
-(For reference, the old Docker-based scheme used fixed IPs `.5` for the container and `.50` for the proxy on a per-variant `NETWORK` subnet. Podman now assigns addresses automatically and the container locates its proxy by hostname via DNS isolation, see `set-proxy-dns.sh`.)
 
 ### DNS Containment
 
@@ -179,29 +279,28 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 ### Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────----─┐
-│              ${VARIANT}-contained-net  (internal network)             │
-│            Subnet: auto-assigned by Podman (no fixed IP)              │
-│                                                                       │
-│   ┌─────────────────────┐                  ┌──────────────────────┐   │
-│   │     Container       │                  │        Proxy         │   │
-│   │     (appuser)       │                  │        (root)        │   │
-│   │                     │                  │                      │   │
-│   │ ${VARIANT}-contained│   ───────────▶   │ ${VARIANT}-contained-│   │
-│   │   IP via podman net │      port 3128   │      proxy           │   │
-│   │                     │   ◀───────────   │   IP via podman net  │   │
-│   └─────────────────────┘                  └───────────┬──────────┘   │
-│                                                       │               │
-└───────────────────────────────────────────────────────┼───────────────┘
-                                                        │
-                                                        │ (allowed domains/IPs/ports only)
-                                                        ▼
-                                            ┌──────────────────────┐
-                                            │     internet-net     │
-                                            │     (external)       │
-                                            └──────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│           ${VARIANT}-contained-net  (internal network)                  │
+│         Subnet: auto-assigned by Podman (no fixed IP)                   │
+│                                                                         │
+│   ┌──────────────────────┐               ┌────────────────────────┐    │
+│   │     Container        │               │        Proxy           │    │
+│   │     (appuser)        │               │        (root)          │    │
+│   │                      │               │                        │    │
+│   │ ${VARIANT}-contained │  ──────────▶  │ ${VARIANT}-contained-  │    │
+│   │   IP via podman net  │   port 3128   │      proxy             │    │
+│   │                      │  ◀──────────  │   IP via podman net    │    │
+│   └──────────────────────┘               └───────────┬────────────┘    │
+│                                                     │                   │
+└─────────────────────────────────────────────────────┼───────────────────┘
+                                                      │
+                                                      │ (allowed domains/IPs/ports only)
+                                                      ▼
+                                          ┌──────────────────────┐
+                                          │     internet-net     │
+                                          │     (external)       │
+                                          └──────────────────────┘
 ```
-
 
 ---
 
@@ -209,12 +308,14 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 
 Each variant has its own `proxy/squid.conf` that defines an **allowlist** of domains. By default, all traffic is blocked.
 
-To allow a domain (e.g. GitHub for code):
-```
+To allow a domain (e.g., GitHub for code):
+```conf
 acl allowed dstdomain .github.com
+http_access allow allowed
 ```
 
 If you need to change proxy rules, edit the `dockers/<variant>/proxy/squid.conf` for that container, then restart the proxy:
+
 ```bash
 podman-compose -f dockers/<variant-name>/compose.yaml restart <variant>-contained-proxy
 ```
@@ -226,15 +327,18 @@ podman-compose -f dockers/<variant-name>/compose.yaml restart <variant>-containe
 | Issue | Fix |
 |-------|-----|
 | `localhost/contained-pods:latest` not found | Run `podman-compose -f compose.yaml build` from project root first |
-| Container can't reach domains | Check proxy is running: `podman ps \| grep squid` |
-| Proxy config not taking effect | Edit `proxy/squid.conf` then `podman-compose -f dockers/<variant>/compose.yaml restart <variant>-contained-proxy` |
+| Container can't reach allowed domains | Check proxy is running: `podman ps \| grep proxy` |
+| Proxy config changes not taking effect | Edit `proxy/squid.conf` then `podman restart <variant>-contained-proxy` then `podman restart <variant>-contained`|
 | Build fails / password not set | Ensure `USER_PASSWORD` is exported before building the base image |
 | Variant won't start (network error) | Ensure `internet-net` exists: `podman network create internet-net` |
+| `podman exec` access denied | Ensure `USER_PASSWORD` was set correctly during base image build |
 
 ---
 
 ## Tips
 
-- Each variant has its own `projects/` folder — mounts it at `/home/appuser/projects`
+- Each variant has its own `projects/` folder — it's mounted at `/home/appuser/projects` inside the container
 - The `.env` file defines `VARIANT` — change it per variant; the variant name drives the container, proxy, network, and image names
 - The `config/` directory is shared across all variants and mounted at `/home/appuser/config` — put shell aliases, environment variables, or any container-wide configs here
+- Use `podman-compose logs -f` to follow container logs in real-time
+- The proxy logs are available at `dockers/<variant>/proxy/logs/` on the host
