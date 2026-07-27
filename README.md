@@ -1,6 +1,16 @@
 # Contained Pods
 
-Podman containers with network isolation via Squid proxy. Each container is fully isolated from the internet unless explicitly allowed through its proxy to reach specific hosts/domains. Core idea is to easily create isolated containers (for LLM agents/harnesses) that only have access to the specific hosts such as LLM API endpoints (optionally repos such as Ubuntu apt, python pip, npm etc) and nothing else. Data can be shared between a given container and the host via a shared folder, so you can view/edit/use files as needed. A ./config folder is setup to share configuration files with these containers for ease of config maintainability. The software inside the container runs as a non-root user. Sudo access is available using a custom password (for things like `apt install`). Containers are accessed directly via `podman exec`.
+Podman containers (pods) with network isolation and logging.
+
+# Why
+- A simple project to run LLM/coding agents in isolated environments with control and visibility using stable tech (Podman and Squid).
+- Podman runs rootless (unlike default Docker): no privileged daemon, and in-container root maps to an unprivileged host UID.
+- All traffic, including DNS, is forced through a separate Squid proxy container. Even if an agent gains root, it cannot reroute traffic.
+- Default-deny: you explicitly allow only the specific domains / subdomains / IP / port combinations each container/pod can reach.
+- Request logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.html).
+- The inner `appuser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
+- Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
+- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups.
 
 ## Prerequisites
 
@@ -283,14 +293,14 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 │           ${VARIANT}-contained-net  (internal network)                  │
 │         Subnet: auto-assigned by Podman (no fixed IP)                   │
 │                                                                         │
-│   ┌──────────────────────┐               ┌────────────────────────┐    │
-│   │     Container        │               │        Proxy           │    │
-│   │     (appuser)        │               │        (root)          │    │
-│   │                      │               │                        │    │
-│   │ ${VARIANT}-contained │  ──────────▶  │ ${VARIANT}-contained-  │    │
-│   │   IP via podman net  │   port 3128   │      proxy             │    │
-│   │                      │  ◀──────────  │   IP via podman net    │    │
-│   └──────────────────────┘               └───────────┬────────────┘    │
+│   ┌──────────────────────┐               ┌────────────────────────┐     │
+│   │     Container        │               │        Proxy           │     │
+│   │     (appuser)        │               │        (root)          │     │
+│   │                      │               │                        │     │
+│   │ ${VARIANT}-contained │  ──────────▶  │ ${VARIANT}-contained-  │     │
+│   │                      │   port 3128   │      proxy             │     │
+│   │                      │  ◀──────────  │          │             │
+│   └──────────────────────┘               └──────────┬─────────────┘     │
 │                                                     │                   │
 └─────────────────────────────────────────────────────┼───────────────────┘
                                                       │
@@ -317,7 +327,10 @@ http_access allow allowed
 If you need to change proxy rules, edit the `dockers/<variant>/proxy/squid.conf` for that container, then restart the proxy:
 
 ```bash
-podman-compose -f dockers/<variant-name>/compose.yaml restart <variant>-contained-proxy
+podman restart <variant>-contained-proxy
+
+# Might need to restart its main pod too
+podman restart <variant>-contained
 ```
 
 ---
@@ -342,3 +355,9 @@ podman-compose -f dockers/<variant-name>/compose.yaml restart <variant>-containe
 - The `config/` directory is shared across all variants and mounted at `/home/appuser/config` — put shell aliases, environment variables, or any container-wide configs here
 - Use `podman-compose logs -f` to follow container logs in real-time
 - The proxy logs are available at `dockers/<variant>/proxy/logs/` on the host
+
+---
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html) (GPLv3).
