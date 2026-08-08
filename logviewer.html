@@ -19,6 +19,12 @@
   .drop{margin-left:auto;border:1px dashed var(--line);border-radius:8px;
         padding:.5rem .9rem;color:var(--muted);font-size:.85rem;cursor:pointer}
   .drop.hot{border-color:var(--accent);color:var(--accent)}
+  .urlrow{display:flex;gap:.4rem;align-items:center}
+  .urlrow input{min-width:280px}
+  .urlrow .cta{border:1px solid var(--accent);color:var(--accent);border-radius:8px;
+    padding:.4rem .8rem;font-size:.82rem;cursor:pointer;background:none}
+  .urlrow .cta:hover{background:rgba(88,166,255,.12)}
+  .urlrow .cta.loading{opacity:.5;cursor:wait}
   .wrap{padding:1.2rem 1.4rem;display:grid;gap:1.1rem;
         grid-template-columns:repeat(12,1fr)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
@@ -51,7 +57,25 @@
   .tbl-wrap{max-height:500px;overflow:auto;border:1px solid var(--line);border-radius:8px}
   /* unique-requests: scroll only once it exceeds ~12 entries (~32px row height + header) */
   .uniq-wrap{max-height:calc(2.37rem + 12 * 2.13rem)}
-  .empty{color:var(--muted);padding:3rem;text-align:center;grid-column:span 12}
+  .empty{grid-column:span 12;min-height:70vh;display:flex;align-items:center;justify-content:center}
+  .empty-card{max-width:640px;padding:2.4rem 2.6rem;border:1px dashed var(--line);
+    border-radius:16px;background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    text-align:center;box-shadow:0 8px 30px #0006;transition:.2s}
+  .empty-card:hover{border-color:var(--accent)}
+  .empty-card .ico{font-size:3.2rem;line-height:1;margin-bottom:.6rem}
+  .empty-card h2{margin:.2rem 0 .5rem;font-size:1.15rem;font-weight:600}
+  .empty-card p{margin:.35rem 0;color:var(--muted);font-size:.9rem;line-height:1.5}
+  .empty-card code{background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;padding:.1rem .4rem;font-size:.82rem;color:var(--txt)}
+  .empty-card .cta{display:inline-block;margin-top:1rem;border:1px solid var(--accent);
+    color:var(--accent);border-radius:8px;padding:.5rem .9rem;font-size:.85rem;cursor:pointer}
+  .empty-card .cta:hover{background:rgba(88,166,255,.12)}
+  /* full-page drop overlay */
+  .dropzone{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    background:#0d1117cc;backdrop-filter:blur(2px);pointer-events:none}
+  .dropzone.hot{display:flex}
+  .dropzone .dz-inner{border:2px dashed var(--accent);border-radius:18px;padding:3rem 4rem;
+    color:var(--accent);font-size:1.2rem;text-align:center;background:#161b22aa}
   .axis{stroke:var(--line);stroke-width:1}
   .axlab{fill:var(--muted);font-size:11px}
   .tip{position:fixed;pointer-events:none;background:#000a;border:1px solid var(--line);
@@ -73,12 +97,27 @@
   <label class="drop" id="drop">Drop access.log here or click to load
     <input type="file" id="file" accept=".log,.txt" hidden />
   </label>
+  <span class="urlrow">
+    <input id="urlInput" placeholder="/path/to/squid-access.log" spellcheck="false" />
+    <button id="urlLoad" class="cta" type="button">Load URL</button>
+  </span>
 </header>
 
 <div class="wrap" id="app">
-  <div class="empty" id="empty">No log loaded — drop a Squid <code>*.log</code> file above.<br>
-  Expected format: <code>timestamp duration client squid_code/http_code size method url user mime</code></div>
+  <div class="empty" id="empty">
+    <div class="empty-card">
+      <div class="ico">🦑</div>
+      <h2>Squid Log Viewer</h2>
+      <p>Drop a <code>{variant}/proxy/logs/squid-access.log</code> file on this page,<br>
+         or click choose a file to get started.</p>
+      <label class="cta">Choose log file
+        <input type="file" id="fileEmpty" accept=".log,.txt" hidden />
+      </label>
+    </div>
+  </div>
 </div>
+
+<div class="dropzone" id="dropzone"><div class="dz-inner">⬇ Drop your Squid <code>*.log</code> here to load</div></div>
 
 <div class="tip" id="tip"></div>
 
@@ -290,13 +329,59 @@ function render(rows){
 }
 
 /* ---------- load ---------- */
+function doLoad(text,name){
+  try{
+    const rows=parse(text);
+    if(rows.length)render(rows);
+    else alert('No parseable Squid log lines found in "'+name+'"\n\nExpected format:\ntimestamp duration client squid_code/http_code size method url user mime');
+  }catch(err){console.error(err);alert('Failed to parse log: '+err.message);}
+}
 function loadFile(file){
+  if(!file)return;
   const fr=new FileReader();
-  fr.onload=()=>{const rows=parse(fr.result);if(rows.length)render(rows);
-    else alert('No parseable Squid log lines found.');};
+  fr.onload=()=>doLoad(fr.result,file.name);
+  fr.onerror=()=>alert('Could not read file: '+file.name);
   fr.readAsText(file);
 }
-$('#file').addEventListener('change',e=>loadFile(e.target.files[0]));
+function loadURL(url){
+  url=(url||'').trim();
+  if(!url)return;
+  $('#urlLoad').classList.add('loading');
+  $('#urlLoad').disabled=true;
+  fetch(url)
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status+' '+r.statusText);return r.text();})
+    .then(t=>doLoad(t,url))
+    .catch(err=>{console.error(err);alert('Could not fetch '+url+'\n\n'+err.message+'\nIf this page is opened as file:// the server must send CORS headers (see the included logserver).');})
+    .finally(()=>{const b=$('#urlLoad');b.disabled=false;b.classList.remove('loading');});
+}
+$('#file').addEventListener('change',e=>{loadFile(e.target.files[0]);e.target.value='';});
+$('#fileEmpty').addEventListener('change',e=>{loadFile(e.target.files[0]);e.target.value='';});
+$('#urlLoad').addEventListener('click',()=>loadURL($('#urlInput').value));
+$('#urlInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadURL(e.target.value);});
+
+// global drag & drop anywhere on the page
+const dropzone=$('#dropzone');
+let dragDepth=0;
+function hasFiles(e){
+  const t=e.dataTransfer && e.dataTransfer.types;
+  if(!t) return false;
+  const arr=Array.from(t).map(String);
+  return arr.includes('Files') || arr.includes('application/x-moz-file') || arr.length>0;
+}
+['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{
+  // always prevent default so the browser never hijacks the drop (Firefox reports
+  // the type as 'application/x-moz-file', not 'Files')
+  if(e.dataTransfer){e.preventDefault();}
+  if(hasFiles(e)){dragDepth++;dropzone.classList.add('hot');}
+}));
+['dragleave','dragend'].forEach(ev=>window.addEventListener(ev,()=>{
+  dragDepth=Math.max(0,dragDepth-1);if(dragDepth===0)dropzone.classList.remove('hot');
+}));
+window.addEventListener('drop',e=>{
+  e.preventDefault();dragDepth=0;dropzone.classList.remove('hot');
+  const f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) loadFile(f);
+});
 const drop=$('#drop');
 ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
