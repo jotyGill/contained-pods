@@ -1,31 +1,31 @@
 # Contained Pods
 
-Podman containers (pods) with network isolation and logging.
+Podman containers (pods) with network isolation and traffic logging.
 
 # Why
 - A simple project to run LLM/coding agents in isolated environments with control and visibility using stable tech (Podman and Squid).
 - Podman runs rootless (unlike default Docker): no privileged daemon, and in-container root maps to an unprivileged host UID.
 - All traffic, including DNS, is forced through a separate Squid proxy container. Even if an agent gains root, it cannot reroute traffic.
 - Default-deny: you explicitly allow only the specific domains / subdomains / IP / port combinations each container/pod can reach.
-- Request logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.html).
-- The inner `appuser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
+- Request logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
+- The inner `poduser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
 - Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
 - Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups.
 
 ## Prerequisites
 
 - **Podman** and **podman-compose**: `sudo apt install podman podman-compose`
-- Your chosen container password, exported as the `USER_PASSWORD` env var at build time. The password is set for the `appuser` account used for `sudo`.
+- Your chosen container password, exported as the `PODUSER_PASSWORD` env var at build time. The password is set for the `poduser` account used for `sudo`.
 
 ---
 
-## Setup Guide
+## Pod Setup Guide
 
-This guide walks you through creating and running an isolated container variant from start to finish.
+How to create and run an isolated container/pod varient.
 
 ### Overview
 
-1. Set the `USER_PASSWORD` environment variable
+1. Set the `PODUSER_PASSWORD` environment variable
 2. Build the base image (`localhost/contained-pods:latest`)
 3. Create the shared `internet-net` network (one-time)
 4. Create a new variant (or use the existing `agents`)
@@ -39,10 +39,10 @@ This guide walks you through creating and running an isolated container variant 
 
 ### 1. Set the Container Password
 
-The `USER_PASSWORD` environment variable is used during the base image build to set the password for the `appuser` account. This password is also used for `sudo` access.
+The `PODUSER_PASSWORD` environment variable is used during the base image build to set the password for the `poduser` account. This password is also used for `sudo` access.
 ```bash
-# Set the password for your containers 'appuser'
-export USER_PASSWORD='your_password_here'
+# Set the password for your containers 'poduser'
+export PODUSER_PASSWORD='your_password_here'
 ```
 
 ---
@@ -175,12 +175,12 @@ If the container can't reach allowed domains, check:
 Access the container directly using `podman exec` (no SSH needed):
 
 ```bash
-podman exec -it --user appuser <variant>-contained zsh
+podman exec -it --user poduser <variant>-contained zsh
 ```
 
 Once inside, you can:
-- Access your projects at `/home/appuser/projects`
-- Use shared configs at `/home/appuser/config`
+- Access your projects at `/home/poduser/projects`
+- Use shared configs at `/home/poduser/config`
 - Use `sudo` with the password you set in Step 1
 - Install packages (in the template config apt sources are allowed (nothing else is allowed by default))
 
@@ -229,9 +229,10 @@ podman-compose up -d --build
 ```
 contained-dockers/
 ├── Dockerfile                 # Base image (SSH, tools, user setup)
-├── compose.yaml               # Builds base image (needs USER_PASSWORD build arg)
+├── compose.yaml               # Builds base image (needs PODUSER_PASSWORD build arg)
+├── logserver.py              # Optional helper: serves logviewer + auto-discovers
 ├── set-proxy-dns.sh           # DNS-isolation entrypoint for the base image
-├── config/                    # Shared configs mounted to /home/appuser/config
+├── config/                    # Shared configs mounted to /home/poduser/config
 │   └── ...                    # Shell settings, aliases, env vars, etc.
 ├── proxy/
 │   └── Dockerfile             # Squid proxy image (runs dnsmasq + squid)
@@ -295,7 +296,7 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 │                                                                         │
 │   ┌──────────────────────┐               ┌────────────────────────┐     │
 │   │     Container        │               │        Proxy           │     │
-│   │     (appuser)        │               │        (root)          │     │
+│   │     (poduser)        │               │        (root)          │     │
 │   │                      │               │                        │     │
 │   │ ${VARIANT}-contained │  ──────────▶  │ ${VARIANT}-contained-  │     │
 │   │                      │   port 3128   │      proxy             │     │
@@ -335,6 +336,21 @@ podman restart <variant>-contained
 
 ---
 
+## Squid Log Viewer
+
+`logviewer` is a setup to view the traffic requests from your pods using the Squid access logs. It shows Squid access logs requests, what requests are being sent, what is being blocked. Actually see what requests your tools/agents are attempting. Run the tiny `logserver.py` helper:
+
+```bash
+cd contained-dockers
+sudo python3 logserver.py --port 8090
+```
+
+Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs/squid-access.log`.
+
+Why not open `logviewer.html` directly? proxy pods write logs owned using a different UID, so the browsers couldn't read them even with world read permissions. (Belive me I tried different apporaches but this setup needs: rootless podman + running DNS server on proxy port 53 to monitor traffic). Run this helper as root using sudo.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -342,17 +358,17 @@ podman restart <variant>-contained
 | `localhost/contained-pods:latest` not found | Run `podman-compose -f compose.yaml build` from project root first |
 | Container can't reach allowed domains | Check proxy is running: `podman ps \| grep proxy` |
 | Proxy config changes not taking effect | Edit `proxy/squid.conf` then `podman restart <variant>-contained-proxy` then `podman restart <variant>-contained`|
-| Build fails / password not set | Ensure `USER_PASSWORD` is exported before building the base image |
+| Build fails / password not set | Ensure `PODUSER_PASSWORD` is exported before building the base image |
 | Variant won't start (network error) | Ensure `internet-net` exists: `podman network create internet-net` |
-| `podman exec` access denied | Ensure `USER_PASSWORD` was set correctly during base image build |
+| `podman exec` access denied | Ensure `PODUSER_PASSWORD` was set correctly during base image build |
 
 ---
 
 ## Tips
 
-- Each variant has its own `projects/` folder — it's mounted at `/home/appuser/projects` inside the container
+- Each variant has its own `projects/` folder — it's mounted at `/home/poduser/projects` inside the container
 - The `.env` file defines `VARIANT` — change it per variant; the variant name drives the container, proxy, network, and image names
-- The `config/` directory is shared across all variants and mounted at `/home/appuser/config` — put shell aliases, environment variables, or any container-wide configs here
+- The `config/` directory is shared across all variants and mounted at `/home/poduser/config` — put shell aliases, environment variables, or any container-wide configs here
 - Use `podman-compose logs -f` to follow container logs in real-time
 - The proxy logs are available at `dockers/<variant>/proxy/logs/` on the host
 

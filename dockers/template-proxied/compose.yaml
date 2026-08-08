@@ -12,8 +12,8 @@ services:
     # ports:
     #   - "2222:22" # Allows SSH from host
     volumes:
-      - ./projects:/home/appuser/projects:rw
-      - ../../config:/home/appuser/config:rw
+      - ./projects:/home/poduser/projects:rw
+      - ../../config:/home/poduser/config:rw
     networks:
       - contained-net
     environment:

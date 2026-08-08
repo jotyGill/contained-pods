@@ -41,7 +41,7 @@ RUN PROXY="http://${PROXY_HOSTNAME}:3128" && \
 RUN echo 'Defaults env_keep += "http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY"' > /etc/sudoers.d/proxy && \
     chmod 0440 /etc/sudoers.d/proxy
 
-USER appuser
+USER poduser
 SHELL ["/bin/bash", "-c"]
 
 # Add ~/.local/bin to PATH

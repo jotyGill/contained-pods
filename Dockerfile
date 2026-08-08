@@ -1,10 +1,10 @@
 
 FROM ubuntu:26.04
 
-ARG THE_USER_NAME=appuser
+ARG THE_USER_NAME=poduser
 ARG THE_USER_UID=1000
 ARG THE_USER_GID=1000
-ARG USER_PASSWORD=
+ARG PODUSER_PASSWORD=
 
 LABEL maintainer="contained-pods"
 
@@ -81,7 +81,7 @@ RUN USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
     fi && \
     groupadd -g ${THE_USER_GID} ${THE_USER_NAME} && \
     useradd -m -d "/home/${THE_USER_NAME}" -s /bin/bash -u ${THE_USER_UID} -g ${THE_USER_GID} ${THE_USER_NAME} && \
-    echo "${THE_USER_NAME}:${USER_PASSWORD}" | chpasswd
+    echo "${THE_USER_NAME}:${PODUSER_PASSWORD}" | chpasswd
 
 # Setup SSH and generate host keys (must be done as root during build)
 RUN mkdir -p /var/run/sshd /etc/ssh /home/${THE_USER_NAME}/.ssh && \

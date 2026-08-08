@@ -6,4 +6,4 @@ services:
       dockerfile: Dockerfile
       network: host
       args:
-        - USER_PASSWORD=${USER_PASSWORD}
+        - PODUSER_PASSWORD=${PODUSER_PASSWORD}
