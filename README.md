@@ -7,10 +7,11 @@ Podman containers (pods) with network isolation and traffic logging.
 - Podman runs rootless (unlike default Docker): no privileged daemon, and in-container root maps to an unprivileged host UID.
 - All traffic, including DNS, is forced through a separate Squid proxy container. Even if an agent gains root, it cannot reroute traffic.
 - Default-deny: you explicitly allow only the specific domains / subdomains / IP / port combinations each container/pod can reach.
-- Request logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
+- Traffic logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
 - The inner `poduser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
 - Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
-- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups.
+- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as readonly to prevent cross-pod laternal movement. Can be changed to write access for easy of use if don't fancy a tinfoil hat.
+- Multiple pods can be easly spun up. Example usecase, 2 pods, one with projects to work on using local LLMs only, another with allowed access to both local and external providers.
 
 ## Prerequisites
 
@@ -29,15 +30,14 @@ How to create and run an isolated container/pod varient.
 2. Build the base image (`localhost/contained-pods:latest`)
 3. Create the shared `internet-net` network (one-time)
 4. Create a new variant (or use the existing `agents`)
-5. Configure the variant's `.env` file
-6. Review and customize the proxy allowlist (`proxy/squid.conf`)
-7. Build and start the variant
-8. Verify the container is running
-9. Access the container
+5. Review and customize the proxy allowlist (`dockers/<variant-name>/proxy/squid.conf`)
+6. Build and start the pod variant
+7. Verify that the new pod variant is running
+8. Access the pod
 
 ---
 
-### 1. Set the Container Password
+### 1. Set the Password
 
 The `PODUSER_PASSWORD` environment variable is used during the base image build to set the password for the `poduser` account. This password is also used for `sudo` access.
 ```bash
@@ -70,32 +70,27 @@ podman network create internet-net
 
 #### Option A: Use an Existing Variant
 
-If you want to use a pre-existing variant `agents`, its `VARIANT`, skip to [Step 6](#6-review-and-customize-the-proxy-allowlist) and review/customize its `proxy/squid.conf` as needed.
+If you want to use a pre-existing variant `agents`, skip to [Step 5](#5-review-and-customize-the-proxy-allowlist) and review/customize its `agents/proxy/squid.conf` as needed.
 
 ```bash
 # List available variants
 ls dockers/
+cd dockers/agents
 ```
 
 #### Option B: Create a New Variant from Template
 
-To create a new isolated container, copy the `template-proxied` directory and customize it:
+To create a new isolated pod, copy the `template-proxied` directory and customize it:
 
 ```bash
 # Copy the template
 cp -r dockers/template-proxied dockers/myvariant
 ```
 
-The copy becomes your new variant. Continue to [Step 5](#5-configure-the-variant-env-file) and [Step 6](#6-review-and-customize-the-proxy-allowlist) to configure it.
-
----
-
-### 5. Configure the Variant (`.env` file)
-
-Set your `VARIANT` name in the variant's `.env` file:
+Set your pod `VARIANT` name in the variant's `.env` file:
 
 ```bash
-cd dockers/<variant-name>
+cd dockers/myvariant
 nano .env
 ```
 
@@ -113,13 +108,12 @@ Optionally edit the variant's `Dockerfile` to add your own software/dependencies
 
 ---
 
-### 6. Review and Customize the Proxy Allowlist (`proxy/squid.conf`)
+### 5. Review and Customize the Proxy Allowlist (`proxy/squid.conf`)
 
 **REQUIRED**: Define which domains/IPs this variant can access. By default, all outbound traffic is blocked.
 
 ```bash
-cd dockers/<variant-name>
-nano proxy/squid.conf
+nano dockers/<variant-name>/proxy/squid.conf
 ```
 
 Example allowlist:
@@ -139,7 +133,7 @@ http_access deny all
 
 ---
 
-### 7. Build and Start the Variant
+### 6. Build and Start the Variant
 
 Build the variant image and start both the container and its proxy:
 
@@ -150,7 +144,7 @@ podman-compose up -d --build
 
 ---
 
-### 8. Verify Everything is Running
+### 7. Verify Everything is Running
 
 Check that both containers are up and running:
 
@@ -164,15 +158,15 @@ podman ps -a
 ```
 
 If the container can't reach allowed domains, check:
-1. Is the proxy running? (`podman ps | grep proxy`)
+1. Is the proxy running? (`podman ps -a`)
 2. Does `squid.conf` have the correct allowlist entries?
 3. Was the proxy restarted after editing `squid.conf`?
 
 ---
 
-### 9. Access the Container
+### 8. Access the Container
 
-Access the container directly using `podman exec` (no SSH needed):
+Access the container directly using `podman exec`.
 
 ```bash
 podman exec -it --user poduser <variant>-contained zsh
@@ -190,7 +184,7 @@ Once inside, you can:
 
 ### Changing Proxy Rules
 
-After editing `proxy/squid.conf`, restart those pods to apply changes:
+After editing `dockers/<variant-name>/proxy/squid.conf`, restart those pods to apply changes:
 
 ```bash
 cd dockers/<variant-name>
@@ -232,7 +226,7 @@ contained-dockers/
 ├── compose.yaml               # Builds base image (needs PODUSER_PASSWORD build arg)
 ├── logserver.py              # Optional helper: serves logviewer + auto-discovers
 ├── set-proxy-dns.sh           # DNS-isolation entrypoint for the base image
-├── config/                    # Shared configs mounted to /home/poduser/config
+├── config/                    # Shared configs mounted as read-only to /home/poduser/config
 │   └── ...                    # Shell settings, aliases, env vars, etc.
 ├── proxy/
 │   └── Dockerfile             # Squid proxy image (runs dnsmasq + squid)
@@ -262,8 +256,8 @@ contained-dockers/
 
 Each variant uses two networks to enforce isolation:
 
-- **Internal network** (`internal: true`) — container can only reach its own squid proxy, not the internet directly
-- **Internet network** (`external: true`) — only the squid proxy connects here to forward allowed traffic
+- **Internal network** (`${VARIANT}-contained-net`) — container can only reach its own squid proxy, not the internet directly
+- **External network** (`internet-net`) — only the squid proxy connects here to forward allowed traffic
 
 Container → Proxy (allowed domains/IPs/ports only) → Internet
 
@@ -278,12 +272,7 @@ Container → Proxy (allowed domains/IPs/ports only) → Internet
 | Container image | `localhost/${VARIANT}-contained:latest` | `localhost/agents-contained:latest` |
 | Proxy image | `localhost/${VARIANT}-contained-proxy:latest` | `localhost/agents-contained-proxy:latest` |
 
-### IP Addressing
-
-Each variant runs on its own `${VARIANT}-contained-net` subnet. IPs are assigned automatically by Podman. The container locates its proxy by hostname via DNS isolation (see `set-proxy-dns.sh`).
-
-
-### DNS Containment
+### Traffic Containment
 
 The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dns_nameservers 127.0.0.1`, so all DNS resolution for the pod is funneled through the proxy's allowlist. The container reaches the proxy via `${VARIANT}-contained-proxy:3128`.
 
@@ -292,15 +281,14 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │           ${VARIANT}-contained-net  (internal network)                  │
-│         Subnet: auto-assigned by Podman (no fixed IP)                   │
 │                                                                         │
 │   ┌──────────────────────┐               ┌────────────────────────┐     │
 │   │     Container        │               │        Proxy           │     │
-│   │     (poduser)        │               │        (root)          │     │
+│   │     (poduser)        │               │                        │     │
 │   │                      │               │                        │     │
 │   │ ${VARIANT}-contained │  ──────────▶  │ ${VARIANT}-contained-  │     │
 │   │                      │   port 3128   │      proxy             │     │
-│   │                      │  ◀──────────  │          │             │
+│   │                      │  ◀──────────  │          │             │     │
 │   └──────────────────────┘               └──────────┬─────────────┘     │
 │                                                     │                   │
 └─────────────────────────────────────────────────────┼───────────────────┘
@@ -317,7 +305,7 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 
 ## How Proxies Work
 
-Each variant has its own `proxy/squid.conf` that defines an **allowlist** of domains. By default, all traffic is blocked.
+Each variant has its own `proxy/squid.conf` that defines an **allowlist** of domains/IPs. **By default, all traffic is blocked**.
 
 To allow a domain (e.g., GitHub for code):
 ```conf
@@ -368,7 +356,7 @@ Why not open `logviewer.html` directly? proxy pods write logs owned using a diff
 
 - Each variant has its own `projects/` folder — it's mounted at `/home/poduser/projects` inside the container
 - The `.env` file defines `VARIANT` — change it per variant; the variant name drives the container, proxy, network, and image names
-- The `config/` directory is shared across all variants and mounted at `/home/poduser/config` — put shell aliases, environment variables, or any container-wide configs here
+- The `config/` directory is shared across all variants and mounted as read-only at `/home/poduser/config` — put shell aliases, environment variables, or any container-wide configs here
 - Use `podman-compose logs -f` to follow container logs in real-time
 - The proxy logs are available at `dockers/<variant>/proxy/logs/` on the host
 

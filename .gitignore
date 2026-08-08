@@ -6,14 +6,14 @@ config/*
 config/.*
 
 # User project data (keep dir, ignore files)
-dockers/*/projects/*
-dockers/*/projects/.**
-dockers/*/proxy/logs/*
-dockers/*/proxy/logs/.**
+mypods/*/projects/*
+mypods/*/projects/.**
+mypods/*/proxy/logs/*
+mypods/*/proxy/logs/.**
 
-dockers/opencode/
-dockers/zed/
-dockers/llmbencher/
+mypods/opencode/
+mypods/zed/
+mypods/llmbencher/
 
 # Authorized_keys
 authorized_keys
