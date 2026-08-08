@@ -13,7 +13,7 @@ services:
     #   - "2222:22" # Allows SSH from host
     volumes:
       - ./projects:/home/poduser/projects:rw
-      - ../../config:/home/poduser/config:rw
+      - ../../config:/home/poduser/config:ro  #Can be changed to rw
     networks:
       - contained-net
     environment:
