@@ -25,6 +25,8 @@
     padding:.4rem .8rem;font-size:.82rem;cursor:pointer;background:none}
   .urlrow .cta:hover{background:rgba(88,166,255,.12)}
   .urlrow .cta.loading{opacity:.5;cursor:wait}
+  .chooser{display:flex;gap:.4rem;align-items:center;font-size:.82rem;color:var(--muted)}
+  .chooser select{min-width:220px}
   .wrap{padding:1.2rem 1.4rem;display:grid;gap:1.1rem;
         grid-template-columns:repeat(12,1fr)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
@@ -100,6 +102,12 @@
   <span class="urlrow">
     <input id="urlInput" placeholder="/path/to/squid-access.log" spellcheck="false" />
     <button id="urlLoad" class="cta" type="button">Load URL</button>
+  </span>
+  <span class="chooser" id="chooser">
+    <label for="containerSelect">Container</label>
+    <select id="containerSelect">
+      <option value="">Discovering…</option>
+    </select>
   </span>
 </header>
 
@@ -354,6 +362,49 @@ function loadURL(url){
     .catch(err=>{console.error(err);alert('Could not fetch '+url+'\n\n'+err.message+'\nIf this page is opened as file:// the server must send CORS headers (see the included logserver).');})
     .finally(()=>{const b=$('#urlLoad');b.disabled=false;b.classList.remove('loading');});
 }
+/* ---------- container discovery (when served over http(s)) ---------- */
+const chooser=$('#chooser');
+const containerSelect=$('#containerSelect');
+
+function loadContainer(path){
+  // loadURL shows its own loading state on the Load URL button.
+  loadURL('/raw/' + encodeURIComponent(path));
+}
+
+// When served over http(s) the server auto-discovers containers; hide the
+// chooser when opened as file:// (discovery would hit a local path anyway).
+if(location.protocol==='http:' || location.protocol==='https:'){
+  fetch('/api/containers')
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(data=>{
+      const list=(data && data.containers)||[];
+      // keep the "load from file" fallback first
+      containerSelect.innerHTML='<option value="">— load from file —</option>';
+      list.forEach(c=>{
+        const o=document.createElement('option');
+        o.value=c.path;
+        o.textContent=c.name + '  ·  ' + c.path;
+        containerSelect.appendChild(o);
+      });
+      if(list.length===1){
+        // exactly one container -> auto-load it
+        containerSelect.value=list[0].path;
+        loadContainer(list[0].path);
+      }
+    })
+    .catch(err=>{
+      console.error('Container discovery failed:',err);
+      containerSelect.innerHTML='<option value="">— containers unavailable —</option>';
+    });
+}else{
+  chooser.style.display='none';
+}
+
+containerSelect.addEventListener('change',()=>{
+  const path=containerSelect.value;
+  if(path) loadContainer(path);
+});
+
 $('#file').addEventListener('change',e=>{loadFile(e.target.files[0]);e.target.value='';});
 $('#fileEmpty').addEventListener('change',e=>{loadFile(e.target.files[0]);e.target.value='';});
 $('#urlLoad').addEventListener('click',()=>loadURL($('#urlInput').value));
