@@ -30,7 +30,7 @@ How to create and run an isolated container/pod varient.
 2. Build the base image (`localhost/contained-pods:latest`)
 3. Create the shared `internet-net` network (one-time)
 4. Create a new variant (or use the existing `agents`)
-5. Review and customize the proxy allowlist (`dockers/<variant-name>/proxy/squid.conf`)
+5. Review and customize the proxy allowlist (`mypods/<variant-name>/proxy/squid.conf`)
 6. Build and start the pod variant
 7. Verify that the new pod variant is running
 8. Access the pod
@@ -49,7 +49,7 @@ export PODUSER_PASSWORD='your_password_here'
 
 ### 2. Build the Base Image
 
-The base image (`localhost/contained-pods:latest`) must be built first, as all variant Dockerfiles inherit from it. Run this from the project root (the `contained-dockers` directory):
+The base image (`localhost/contained-pods:latest`) must be built first, as all variant Dockerfiles inherit from it. Run this from the project root (the `contained-pods` directory):
 ```bash
 podman-compose -f compose.yaml build
 ```
@@ -74,8 +74,8 @@ If you want to use a pre-existing variant `agents`, skip to [Step 5](#5-review-a
 
 ```bash
 # List available variants
-ls dockers/
-cd dockers/agents
+ls mypods/
+cd mypods/agents
 ```
 
 #### Option B: Create a New Variant from Template
@@ -84,13 +84,13 @@ To create a new isolated pod, copy the `template-proxied` directory and customiz
 
 ```bash
 # Copy the template
-cp -r dockers/template-proxied dockers/myvariant
+cp -r mypods/template-proxied mypods/myvariant
 ```
 
 Set your pod `VARIANT` name in the variant's `.env` file:
 
 ```bash
-cd dockers/myvariant
+cd mypods/myvariant
 nano .env
 ```
 
@@ -113,7 +113,7 @@ Optionally edit the variant's `Dockerfile` to add your own software/dependencies
 **REQUIRED**: Define which domains/IPs this variant can access. By default, all outbound traffic is blocked.
 
 ```bash
-nano dockers/<variant-name>/proxy/squid.conf
+nano mypods/<variant-name>/proxy/squid.conf
 ```
 
 Example allowlist:
@@ -138,7 +138,7 @@ http_access deny all
 Build the variant image and start both the container and its proxy:
 
 ```bash
-cd dockers/<variant-name>
+cd mypods/<variant-name>
 podman-compose up -d --build
 ```
 
@@ -184,17 +184,17 @@ Once inside, you can:
 
 ### Changing Proxy Rules
 
-After editing `dockers/<variant-name>/proxy/squid.conf`, restart those pods to apply changes:
+After editing `mypods/<variant-name>/proxy/squid.conf`, restart those pods to apply changes:
 
 ```bash
-cd dockers/<variant-name>
+cd mypods/<variant-name>
 podman-compose restart
 ```
 
 ### Starting / Stopping
 
 ```bash
-cd dockers/<variant-name>
+cd mypods/<variant-name>
 
 # Stop containers (preserves data)
 podman-compose stop
@@ -212,7 +212,7 @@ If you modify the variant's `Dockerfile`:
 
 ```bash
 # Rebuild variant
-cd dockers/<variant-name>
+cd mypods/<variant-name>
 podman-compose up -d --build
 ```
 
@@ -221,7 +221,7 @@ podman-compose up -d --build
 ## Project Structure
 
 ```
-contained-dockers/
+contained-pods/
 ├── Dockerfile                 # Base image (SSH, tools, user setup)
 ├── compose.yaml               # Builds base image (needs PODUSER_PASSWORD build arg)
 ├── logserver.py              # Optional helper: serves logviewer + auto-discovers
@@ -230,7 +230,7 @@ contained-dockers/
 │   └── ...                    # Shell settings, aliases, env vars, etc.
 ├── proxy/
 │   └── Dockerfile             # Squid proxy image (runs dnsmasq + squid)
-└── dockers/
+└── mypods/
     ├── template-proxied/      # TEMPLATE: copy this to create a new variant
     │   ├── .env               # VARIANT=template-proxied
     │   ├── Dockerfile         # Variant dockerfile (FROM localhost/contained-pods:latest)
@@ -313,7 +313,7 @@ acl allowed dstdomain .github.com
 http_access allow allowed
 ```
 
-If you need to change proxy rules, edit the `dockers/<variant>/proxy/squid.conf` for that container, then restart the proxy:
+If you need to change proxy rules, edit the `mypods/<variant>/proxy/squid.conf` for that container, then restart the proxy:
 
 ```bash
 podman restart <variant>-contained-proxy
@@ -329,7 +329,7 @@ podman restart <variant>-contained
 `logviewer` is a setup to view the traffic requests from your pods using the Squid access logs. It shows Squid access logs requests, what requests are being sent, what is being blocked. Actually see what requests your tools/agents are attempting. Run the tiny `logserver.py` helper:
 
 ```bash
-cd contained-dockers
+cd contained-pods
 sudo python3 logserver.py --port 8090
 ```
 
@@ -358,7 +358,7 @@ Why not open `logviewer.html` directly? proxy pods write logs owned using a diff
 - The `.env` file defines `VARIANT` — change it per variant; the variant name drives the container, proxy, network, and image names
 - The `config/` directory is shared across all variants and mounted as read-only at `/home/poduser/config` — put shell aliases, environment variables, or any container-wide configs here
 - Use `podman-compose logs -f` to follow container logs in real-time
-- The proxy logs are available at `dockers/<variant>/proxy/logs/` on the host
+- The proxy logs are available at `mypods/<variant>/proxy/logs/` on the host
 
 ---
 

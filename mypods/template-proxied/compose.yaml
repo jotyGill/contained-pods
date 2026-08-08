@@ -5,7 +5,7 @@ services:
     userns_mode: keep-id
     build:
       context: ../..
-      dockerfile: dockers/${VARIANT}/Dockerfile
+      dockerfile: mypods/${VARIANT}/Dockerfile
       network: host            ## this host network link is only for build time installs
       args:
         - PROXY_HOSTNAME=${VARIANT}-contained-proxy
