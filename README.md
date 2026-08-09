@@ -118,9 +118,9 @@ nano mypods/<variant-name>/proxy/squid.conf
 
 Example allowlist:
 ```conf
-# Allow access to GitHub
-acl allowed dstdomain .github.com
-http_access allow allowed
+# Example: Allow access to local LLM Llama.cpp server at 192.168.0.50:8080
+acl allowed_internal dst 192.168.0.50
+acl allowed_internal_port port 8080
 
 # Allow access to PyPI
 acl allowed dstdomain .pypi.org
@@ -129,6 +129,9 @@ http_access allow allowed
 
 # Deny everything else
 http_access deny all
+
+----
+http_access allow allowed_internal allowed_internal_port
 ```
 
 ---
@@ -334,6 +337,8 @@ sudo python3 logserver.py --port 8090
 ```
 
 Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs/squid-access.log`.
+
+![Log Server](https://raw.githubusercontent.com/jotyGill/contained-pods/main/assets/logserver.png)
 
 Why not open `logviewer.html` directly? proxy pods write logs owned using a different UID, so the browsers couldn't read them even with world read permissions. (Belive me I tried different apporaches but this setup needs: rootless podman + running DNS server on proxy port 53 to monitor traffic). Run this helper as root using sudo.
 
