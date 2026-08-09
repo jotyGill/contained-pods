@@ -4,7 +4,7 @@
 Why this exists
 ================
 logviewer.html is pure client-side. The *browser* opens the log file itself and could not read files owned by other users (squid's UID). Podman
-proxy containers are writing logs owned by a different UID. Believe me I have tried differnt solutions... this is simple and works.
+proxy containers are writing logs owned by a different UID. Believe me I have tried different solutions... this is simple and works.
 
 This server is supposed to run as root using sudo and it hands the log files to the browser.
 
@@ -21,7 +21,7 @@ Features
 Usage
 =====
     # run as root/sudo so it can read podman-owned logs
-    sudo python3 logserver.py --root /path/to/contained-dockers --port 8090
+    sudo python3 logserver.py --port 8090
 
     # defaults: --root=current dir --host=127.0.0.1 --port=8090
     sudo python3 logserver.py
@@ -59,14 +59,14 @@ def _container_name(log_relpath):
     """Name of the container for a log at ``.../<name>/proxy/logs/squid-access.log``.
 
     The container is the path segment immediately before ``proxy``. Returns the
-    full container path segment (e.g. ``dockers/agents`` -> ``agents``).
+    container dir name (e.g. ``mypods/agents`` -> ``agents``).
     """
     marker = "/proxy/logs/"
     idx = log_relpath.find(marker)
-    if idx < 0:
-        return os.path.basename(os.path.dirname(os.path.dirname(log_relpath)))
-    container_dir = log_relpath[:idx]  # e.g. "dockers/agents"
-    return os.path.dirname(container_dir) not in ("",) and os.path.basename(container_dir) or container_dir
+    # _container_name is only ever called from collect_containers for paths
+    # that contain the marker, so idx is always >= 0.
+    container_dir = log_relpath[:idx]  # e.g. "mypods/agents"
+    return os.path.basename(container_dir)
 
 
 def collect_containers(root):
@@ -79,6 +79,8 @@ def collect_containers(root):
     """
     found = {}  # name -> (depth, relpath, size)
     for dirpath, _dirs, files in os.walk(root):
+        if os.path.basename(dirpath).startswith("."):
+            continue
         if os.path.basename(dirpath) != "logs":
             continue
         if "squid-access.log" not in files:
@@ -206,7 +208,7 @@ def main():
         for c in containers:
             print(f"  - {c['name']}: {c['path']} ({c['size']} bytes)")
     else:
-        print("No *\u2215proxy/logs/squid-access.log files found under the root.")
+        print("No */proxy/logs/squid-access.log files found under the root.")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
