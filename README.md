@@ -16,8 +16,8 @@ Podman containers (pods) with network isolation and traffic logging.
 ## Prerequisites
 
 - **Podman** and **podman-compose**: `sudo apt install podman podman-compose`
-- Your chosen container password, exported as the `PODUSER_PASSWORD` env var at build time. The password is set for the `poduser` account used for `sudo`.
-
+- TUI coding agents misbehave when you copy/paste from them when they're running inside any container. Use a terminal emulator that handles this properly, e.g. [kitty](https://github.com/kovidgoyal/kitty) `host-tools/setup-kitty.sh`.
+- You can run the scripts from `host-tools` to have a betteries included setup. They can setup Kitty, download agent binaries for the pods like opencode, pi, maki, herdr, agent-browser, configure ezsh for pods etc.
 ---
 
 ## Pod Setup Guide
@@ -169,7 +169,7 @@ If the container can't reach allowed domains, check:
 Access the container directly using `podman exec`.
 
 ```bash
-podman exec -it --user poduser <variant>-contained zsh
+podman exec -it --user poduser <variant>-contained bash
 ```
 
 Once inside, you can:
