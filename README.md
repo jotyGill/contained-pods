@@ -2,7 +2,7 @@
 
 Podman containers (pods) with network isolation and traffic logging.
 
-# Why
+## Why
 - A simple project to run LLM/coding agents in isolated environments with control and visibility using stable tech (Podman and Squid).
 - Podman runs rootless (unlike default Docker): no privileged daemon, and in-container root maps to an unprivileged host UID.
 - All traffic, including DNS, is forced through a separate Squid proxy container. Even if an agent gains root, it cannot reroute traffic.
@@ -10,8 +10,8 @@ Podman containers (pods) with network isolation and traffic logging.
 - Traffic logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
 - The inner `poduser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
 - Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
-- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as readonly to prevent cross-pod laternal movement. Can be changed to write access for easy of use if don't fancy a tinfoil hat.
-- Multiple pods can be easly spun up. Example usecase, 2 pods, one with projects to work on using local LLMs only, another with allowed access to both local and external providers.
+- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as readonly to prevent cross-pod lateral movement. You can change it to write access for convenience if don't fancy a tinfoil hat.
+- Multiple pods can be easily spun up. Example usecase, 2 pods, one with projects to work on using local LLMs only, another with allowed access to both local and external providers.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ Podman containers (pods) with network isolation and traffic logging.
 
 ## Pod Setup Guide
 
-How to create and run an isolated container/pod varient.
+How to create and run an isolated container/pod variant.
 
 ### Overview
 
@@ -201,11 +201,9 @@ cd mypods/<variant-name>
 
 # Stop containers (preserves data)
 podman-compose stop
-
 # Start again
 podman-compose start
-
-# Stop and remove containers (preserves images and volumes)
+# Stop and remove containers
 podman-compose down
 ```
 
@@ -227,19 +225,21 @@ podman-compose up -d --build
 contained-pods/
 ├── Dockerfile                 # Base image (SSH, tools, user setup)
 ├── compose.yaml               # Builds base image (needs PODUSER_PASSWORD build arg)
-├── logserver.py              # Optional helper: serves logviewer + auto-discovers
+├── logserver.py               # Optional helper: serves logviewer + auto-discovers logs
+├── logviewer.html             # Log viewer frontend (served by logserver.py)
 ├── set-proxy-dns.sh           # DNS-isolation entrypoint for the base image
+├── host-tools/                # Host setup scripts (kitty, agent binaries, etc.)
 ├── config/                    # Shared configs mounted as read-only to /home/poduser/config
 │   └── ...                    # Shell settings, aliases, env vars, etc.
 ├── proxy/
 │   └── Dockerfile             # Squid proxy image (runs dnsmasq + squid)
 └── mypods/
-    ├── template-proxied/      # TEMPLATE: copy this to create a new variant
+    ├── template-proxied/      # TEMPLATE: copy this to create a new variant pod
     │   ├── .env               # VARIANT=template-proxied
     │   ├── Dockerfile         # Variant dockerfile (FROM localhost/contained-pods:latest)
     │   ├── compose.yaml
     │   ├── proxy/
-    │   │   ├── squid.conf     # ⚠️ MUST REVIEW: Allowlist domains for this variant
+    │   │   ├── squid.conf     # ⚠️ MUST REVIEW: Allowlist domains/IPs for your variant
     │   │   └── logs/          # Mounted proxy logs (git ignored)
     │   └── projects/          # Your code projects (git ignored)
     ├── agents/                # Example variant: LLM coding agents
@@ -340,7 +340,7 @@ Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs
 
 ![Log Server](https://raw.githubusercontent.com/jotyGill/contained-pods/main/assets/logserver.png)
 
-Why not open `logviewer.html` directly? proxy pods write logs owned using a different UID, so the browsers couldn't read them even with world read permissions. (Belive me I tried different apporaches but this setup needs: rootless podman + running DNS server on proxy port 53 to monitor traffic). Run this helper as root using sudo.
+Why not open `logviewer.html` directly? Proxy pods write logs owned by a different UID, so browsers couldn't read them even with world-read permissions. (Belive me I tried different apporaches but this setup needs: rootless podman + running DNS server on proxy port 53). Run this helper as root using `sudo`.
 
 ---
 
