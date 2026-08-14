@@ -10,10 +10,6 @@ LABEL maintainer="contained-pods"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy SSH config template and authorized_keys
-COPY sshd_config.template /tmp/sshd_config.template
-COPY authorized_keys /tmp/authorized_keys
-
 # Install minimal useful dependencies; keeping image around ~330MB
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -83,19 +79,6 @@ RUN USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
     useradd -m -d "/home/${THE_USER_NAME}" -s /bin/bash -u ${THE_USER_UID} -g ${THE_USER_GID} ${THE_USER_NAME} && \
     echo "${THE_USER_NAME}:${PODUSER_PASSWORD}" | chpasswd
 
-# Setup SSH and generate host keys (must be done as root during build)
-RUN mkdir -p /var/run/sshd /etc/ssh /home/${THE_USER_NAME}/.ssh && \
-    ssh-keygen -A && \
-    cat /tmp/sshd_config.template \
-    | envsubst '$THE_USER_NAME' \
-    | tee /etc/ssh/sshd_config.d/sshd.conf \
-    && cat /tmp/authorized_keys \
-    | tee /home/${THE_USER_NAME}/.ssh/authorized_keys \
-    && rm /tmp/sshd_config.template /tmp/authorized_keys && \
-    chmod 700 /home/${THE_USER_NAME}/.ssh && \
-    chmod 600 /home/${THE_USER_NAME}/.ssh/authorized_keys && \
-    chown -R ${THE_USER_NAME}:${THE_USER_NAME} /home/${THE_USER_NAME}/.ssh
-
 # Install application (customize this section for your needs)
 USER ${THE_USER_NAME}
 WORKDIR /home/${THE_USER_NAME}
@@ -113,9 +96,6 @@ RUN groupadd -f sudo && \
 COPY set-proxy-dns.sh /usr/local/bin/set-proxy-dns.sh
 RUN chmod +x /usr/local/bin/set-proxy-dns.sh
 
-# Expose SSH port (standard)
-EXPOSE 22
-
-# Start SSH daemon via DNS isolation entrypoint
+# Start interactive shell in the pod via DNS isolation entrypoint
 USER root
-ENTRYPOINT ["/usr/local/bin/set-proxy-dns.sh", "/usr/sbin/sshd", "-D"]
+ENTRYPOINT ["/usr/local/bin/set-proxy-dns.sh", "sleep", "infinity"]
