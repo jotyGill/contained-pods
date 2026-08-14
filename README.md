@@ -1,6 +1,6 @@
 # Contained Pods
 
-Podman containers (pods) with network isolation and traffic logging.
+Spinup Podman containers with network isolation and traffic logging to run coding/LLM agents, untrusted tools, anything really.
 
 ## Why
 - A simple project to run LLM/coding agents in isolated environments with control and visibility using stable tech (Podman and Squid).
@@ -10,17 +10,79 @@ Podman containers (pods) with network isolation and traffic logging.
 - Traffic logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
 - The inner `poduser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
 - Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
-- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as readonly to prevent cross-pod lateral movement. You can change it to write access for convenience if don't fancy a tinfoil hat.
+- Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as read only to prevent cross-pod lateral movement. You can change it to write access for convenience if you don't fancy a tinfoil hat.
 - Multiple pods can be easily spun up. Example usecase, 2 pods, one with projects to work on using local LLMs only, another with allowed access to both local and external providers.
 
 ## Prerequisites
 
 - **Podman** and **podman-compose**: `sudo apt install podman podman-compose`
 - TUI coding agents misbehave when you copy/paste from them when they're running inside any container. Use a terminal emulator that handles this properly, e.g. [kitty](https://github.com/kovidgoyal/kitty) `host-tools/setup-kitty.sh`.
-- You can run the scripts from `host-tools` to have a betteries included setup. They can setup Kitty, download agent binaries for the pods like opencode, pi, maki, herdr, agent-browser, configure ezsh for pods etc.
+- You can run the scripts from `host-tools` to have a batteries included setup. They can setup Kitty, download agent binaries for the pods like opencode, pi, maki, herdr, agent-browser, configure ezsh for pods etc.
 ---
 
-## Pod Setup Guide
+## Quick Start (run the shipped `agents` pod)
+
+The fastest way to get a working, isolated pod. Run from the project root (the `contained-pods` directory):
+
+```bash
+# 0. One-time: install prerequisites
+sudo apt install podman podman-compose
+
+# 1. Give the container's 'poduser' account a password (used for sudo inside).
+export PODUSER_PASSWORD='replace-with-a-password'
+
+# 2. One-time: build the base image
+podman-compose -f compose.yaml build
+
+# 3. One-time: create the shared external network
+podman network create internet-net
+
+# 4. Review what the agents pod is allowed to reach (default-deny otherwise)
+nano mypods/agents/proxy/squid.conf
+
+# 5. Build and start the agents pod (container + proxy)
+cd mypods/agents
+podman-compose up -d --build
+## IF YOU GET Error: --userns and --pod cannot be set together :: RUN :: podman-compose --in-pod false up -d --build
+
+# 6. Verify both containers are running
+podman ps -a
+#    You should see:  agents-contained   and   agents-contained-proxy
+
+# 7. Jump inside the pod as 'poduser'
+podman exec -it --user poduser agents-contained bash
+```
+
+You're in. From inside the pod:
+
+- Your code lives at `/home/poduser/projects`
+- Shared configs are at `/home/poduser/config` (read-only)
+- `sudo` works with the password you set in step 1
+- **All outbound traffic is blocked by default** — only the domains listed in `mypods/agents/proxy/squid.conf` are reachable. Edit that file and run `podman-compose restart` (inside `mypods/agents`) to apply changes.
+
+> Optional, after the pod is running: prep agent binaries, shell aliases and Kitty on the host with the `host-tools/*.sh` scripts. See [`host-tools/README.md`](host-tools/README.md).
+
+---
+
+## Squid Log Viewer
+
+`logviewer` is a setup to view the traffic requests from your pods using the Squid access logs. It shows Squid access logs requests, what requests are being sent, what is being blocked. Actually see what requests your tools/agents are attempting. Run the tiny `logserver.py` helper:
+
+```bash
+cd contained-pods
+sudo python3 logserver.py --port 8090
+```
+
+Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs/squid-access.log`.
+
+![Log Server](https://raw.githubusercontent.com/jotyGill/contained-pods/main/assets/logserver.png)
+
+Why not open `logviewer.html` directly? Proxy pods write logs owned by a different UID, so browsers couldn't read them even with world-read permissions. (I tried different approaches, but this setup needs: rootless podman + a DNS server running on the proxy's port 53 + UID 1000 mapping for seemless file permission). Run this helper as root using `sudo`.
+
+---
+
+<details>
+<summary><b>Full Setup Guide For Multiple Variants</b></summary>
 
 How to create and run an isolated container/pod variant.
 
@@ -29,7 +91,7 @@ How to create and run an isolated container/pod variant.
 1. Set the `PODUSER_PASSWORD` environment variable
 2. Build the base image (`localhost/contained-pods:latest`)
 3. Create the shared `internet-net` network (one-time)
-4. Create a new variant (or use the existing `agents`)
+4. Create a new variant
 5. Review and customize the proxy allowlist (`mypods/<variant-name>/proxy/squid.conf`)
 6. Build and start the pod variant
 7. Verify that the new pod variant is running
@@ -66,19 +128,7 @@ podman network create internet-net
 
 ---
 
-### 4. Create or Choose a Variant
-
-#### Option A: Use an Existing Variant
-
-If you want to use a pre-existing variant `agents`, skip to [Step 5](#5-review-and-customize-the-proxy-allowlist) and review/customize its `agents/proxy/squid.conf` as needed.
-
-```bash
-# List available variants
-ls mypods/
-cd mypods/agents
-```
-
-#### Option B: Create a New Variant from Template
+### 4. Create a New Variant from the Template
 
 To create a new isolated pod, copy the `template-proxied` directory and customize it:
 
@@ -118,9 +168,10 @@ nano mypods/<variant-name>/proxy/squid.conf
 
 Example allowlist:
 ```conf
-# Example: Allow access to local LLM Llama.cpp server at 192.168.0.50:8080
+# Allow access to a local LLM (Llama.cpp) at 192.168.0.50:8080
 acl allowed_internal dst 192.168.0.50
 acl allowed_internal_port port 8080
+http_access allow allowed_internal allowed_internal_port
 
 # Allow access to PyPI
 acl allowed dstdomain .pypi.org
@@ -129,9 +180,6 @@ http_access allow allowed
 
 # Deny everything else
 http_access deny all
-
-----
-http_access allow allowed_internal allowed_internal_port
 ```
 
 ---
@@ -179,11 +227,13 @@ Once inside, you can:
 - Access your projects at `/home/poduser/projects`
 - Use shared configs at `/home/poduser/config`
 - Use `sudo` with the password you set in Step 1
-- Install packages (in the template config apt sources are allowed (nothing else is allowed by default))
+- Install packages (in the template, APT sources are allowed, nothing else is allowed by default)
 
 ---
+</details>
 
-## Managing Variants
+<details>
+<summary><b>Managing Variants</b></summary>
 
 ### Changing Proxy Rules
 
@@ -218,8 +268,10 @@ podman-compose up -d --build
 ```
 
 ---
+</details>
 
-## Project Structure
+<details>
+<summary><b>Project Structure</b></summary>
 
 ```
 contained-pods/
@@ -254,8 +306,10 @@ contained-pods/
 ```
 
 ---
+</details>
 
-## Network Architecture
+<details>
+<summary><b>Network Architecture</b></summary>
 
 Each variant uses two networks to enforce isolation:
 
@@ -305,8 +359,10 @@ The proxy runs its own `dnsmasq` and squid's `squid.conf` is configured with `dn
 ```
 
 ---
+</details>
 
-## How Proxies Work
+<details>
+<summary><b>How Proxies Work</b></summary>
 
 Each variant has its own `proxy/squid.conf` that defines an **allowlist** of domains/IPs. **By default, all traffic is blocked**.
 
@@ -325,26 +381,12 @@ podman restart <variant>-contained-proxy
 podman restart <variant>-contained
 ```
 
----
-
-## Squid Log Viewer
-
-`logviewer` is a setup to view the traffic requests from your pods using the Squid access logs. It shows Squid access logs requests, what requests are being sent, what is being blocked. Actually see what requests your tools/agents are attempting. Run the tiny `logserver.py` helper:
-
-```bash
-cd contained-pods
-sudo python3 logserver.py --port 8090
-```
-
-Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs/squid-access.log`.
-
-![Log Server](https://raw.githubusercontent.com/jotyGill/contained-pods/main/assets/logserver.png)
-
-Why not open `logviewer.html` directly? Proxy pods write logs owned by a different UID, so browsers couldn't read them even with world-read permissions. (Belive me I tried different apporaches but this setup needs: rootless podman + running DNS server on proxy port 53). Run this helper as root using `sudo`.
 
 ---
+</details>
 
-## Troubleshooting
+<details>
+<summary><b>Troubleshooting</b></summary>
 
 | Issue | Fix |
 |-------|-----|
@@ -356,8 +398,10 @@ Why not open `logviewer.html` directly? Proxy pods write logs owned by a differe
 | `podman exec` access denied | Ensure `PODUSER_PASSWORD` was set correctly during base image build |
 
 ---
+</details>
 
-## Tips
+<details>
+<summary><b>Tips</b></summary>
 
 - Each variant has its own `projects/` folder — it's mounted at `/home/poduser/projects` inside the container
 - The `.env` file defines `VARIANT` — change it per variant; the variant name drives the container, proxy, network, and image names
@@ -366,6 +410,7 @@ Why not open `logviewer.html` directly? Proxy pods write logs owned by a differe
 - The proxy logs are available at `mypods/<variant>/proxy/logs/` on the host
 
 ---
+</details>
 
 ## License
 
