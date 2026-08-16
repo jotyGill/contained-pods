@@ -42,8 +42,13 @@ nano mypods/agents/proxy/squid.conf
 
 # 5. Build and start the agents pod (container + proxy)
 cd mypods/agents
-podman-compose up -d --build
-## IF YOU GET Error: --userns and --pod cannot be set together :: RUN :: podman-compose --in-pod false up -d --build
+
+# On Ubuntu 26.04 or Debain 13, or any newer OS with Podman ≥ 5.0
+podman-compose --in-pod false up -d --build
+
+# On Ubuntu 24.04 and older versions of Podman use
+#podman-compose up -d --build
+## If you get error: --userns and --pod cannot be set together RUN ::podman-compose down && podman-compose --in-pod false up -d --build
 
 # 6. Verify both containers are running
 podman ps -a
