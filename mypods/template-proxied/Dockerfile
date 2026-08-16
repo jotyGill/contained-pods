@@ -9,7 +9,7 @@ USER root
 #RUN npm install -g opencode-ai
 #RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
-# Write proxy variables to profile.d so SSH sessions pick them up
+# Write proxy variables to profile.d so shell sessions pick them up
 # 2. Bash/Zsh/Sh login shells (/etc/profile.d)
 RUN PROXY="http://${PROXY_HOSTNAME}:3128" && \
     echo "export http_proxy=$PROXY" > /etc/profile.d/proxy.sh && \
@@ -48,5 +48,5 @@ SHELL ["/bin/bash", "-c"]
 RUN echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc && \
     echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.zshrc
 
-# Switch back to root for SSH daemon (entrypoint from base image)
+# Switch back to root for the base image entrypoint
 USER root
