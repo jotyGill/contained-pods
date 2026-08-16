@@ -37,7 +37,7 @@ podman-compose -f compose.yaml build
 # 3. One-time: create the shared external network
 podman network create internet-net
 
-# 4. Review what the agents pod is allowed to reach (default-deny otherwise)
+# 4. REVIEW AND ALLOW THE NETWORK SOURCES YOU NEED FOR THIS CONTAINFED (default only allows APT sources and HOST:8085 everyting else is denied)
 nano mypods/agents/proxy/squid.conf
 
 # 5. Build and start the agents pod (container + proxy)
@@ -244,24 +244,16 @@ Once inside, you can:
 
 ### Changing Proxy Rules
 
-After editing `mypods/<variant-name>/proxy/squid.conf`, restart those pods to apply changes:
-
-```bash
-cd mypods/<variant-name>
-podman-compose restart
-```
+After editing `mypods/<variant-name>/proxy/squid.conf`, restart those pods to apply changes.
 
 ### Starting / Stopping
 
 ```bash
 cd mypods/<variant-name>
-
 # Stop containers (preserves data)
 podman-compose stop
 # Start again
 podman-compose start
-# Stop and remove containers
-podman-compose down
 ```
 
 ### Rebuilding After Changes
@@ -271,6 +263,8 @@ If you modify the variant's `Dockerfile`:
 ```bash
 # Rebuild variant
 cd mypods/<variant-name>
+# Stop and remove containers. Data in ~/projects is still preserved, everyting else
+podman-compose down
 podman-compose --in-pod false up -d --build
 ```
 
@@ -379,13 +373,14 @@ acl allowed dstdomain .github.com
 http_access allow allowed
 ```
 
-If you need to change proxy rules, edit the `mypods/<variant>/proxy/squid.conf` for that container, then restart the proxy:
+If you need to change proxy rules, edit the `mypods/<variant>/proxy/squid.conf` for that container, then restart the containers:
 
 ```bash
-podman restart <variant>-contained-proxy
-
-# Might need to restart its main pod too
-podman restart <variant>-contained
+cd mypods/<variant-name>
+# Stop containers (preserves data)
+podman-compose stop
+# Start again
+podman-compose start
 ```
 
 
