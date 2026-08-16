@@ -7,7 +7,7 @@ Spinup Podman containers with network isolation and traffic logging to run codin
 - Podman runs rootless (unlike default Docker): no privileged daemon, and in-container root maps to an unprivileged host UID.
 - All traffic, including DNS, is forced through a separate Squid proxy container. Even if an agent gains root, it cannot reroute traffic.
 - Default-deny: you explicitly allow only the specific domains / subdomains / IP / port combinations each container/pod can reach.
-- Traffic logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logviewer.py).
+- Traffic logging and dashboard for easy analysis, see exactly what your agents are trying to reach (check out logserver.py).
 - The inner `poduser` has `sudo` (e.g. for `apt install`) but requires a password you set at build time.
 - Easy host↔container file sharing: each container gets a mounted `~/projects/` directory.
 - Easy management of your configurations, dotfiles and scripts; a shared `~/config/` directory for unified setups. Mounted as read only to prevent cross-pod lateral movement. You can change it to write access for convenience if you don't fancy a tinfoil hat.
@@ -43,12 +43,14 @@ nano mypods/agents/proxy/squid.conf
 # 5. Build and start the agents pod (container + proxy)
 cd mypods/agents
 
-# On Ubuntu 26.04 or Debain 13, or any newer OS with Podman ≥ 5.0
+# On Ubuntu 26.04 or Debian 13, or any newer OS with Podman ≥ 5.0
 podman-compose --in-pod false up -d --build
 
-# On Ubuntu 24.04 and older versions of Podman use
-#podman-compose up -d --build
-## If you get error: --userns and --pod cannot be set together RUN ::podman-compose down && podman-compose --in-pod false up -d --build
+# On Ubuntu 24.04 and older versions of Podman use:
+# podman-compose up -d --build
+
+# If you get error: --userns and --pod cannot be set together, run:
+# podman-compose down && podman-compose --in-pod false up -d --build
 
 # 6. Verify both containers are running
 podman ps -a
@@ -82,7 +84,7 @@ Then open http://127.0.0.1:8090/ it auto-discovers every container's `proxy/logs
 
 ![Log Server](https://raw.githubusercontent.com/jotyGill/contained-pods/main/assets/logserver.png)
 
-Why not open `logviewer.html` directly? Proxy pods write logs owned by a different UID, so browsers couldn't read them even with world-read permissions. (I tried different approaches, but this setup needs: rootless podman + a DNS server running on the proxy's port 53 + UID 1000 mapping for seemless file permission). Run this helper as root using `sudo`.
+Why not open `logviewer.html` directly? Proxy pods write logs owned by a different UID, so browsers couldn't read them even with world-read permissions. (I tried different approaches, but this setup needs: rootless podman + a DNS server running on the proxy's port 53 + UID 1000 mapping for seamless file permission). Run this helper as root using `sudo`.
 
 ---
 
@@ -195,7 +197,7 @@ Build the variant image and start both the container and its proxy:
 
 ```bash
 cd mypods/<variant-name>
-podman-compose up -d --build
+podman-compose --in-pod false up -d --build
 ```
 
 ---
@@ -269,7 +271,7 @@ If you modify the variant's `Dockerfile`:
 ```bash
 # Rebuild variant
 cd mypods/<variant-name>
-podman-compose up -d --build
+podman-compose --in-pod false up -d --build
 ```
 
 ---
@@ -280,7 +282,7 @@ podman-compose up -d --build
 
 ```
 contained-pods/
-├── Dockerfile                 # Base image (SSH, tools, user setup)
+├── Dockerfile                 # Base image (tools, user setup)
 ├── compose.yaml               # Builds base image (needs PODUSER_PASSWORD build arg)
 ├── logserver.py               # Optional helper: serves logviewer + auto-discovers logs
 ├── logviewer.html             # Log viewer frontend (served by logserver.py)
