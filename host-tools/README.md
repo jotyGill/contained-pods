@@ -11,7 +11,7 @@ Scripts you run on the **host** (your machine), not inside a pod container.
 ## Contrast with `config/`
 
 - **`host-tools/`** run **on the host** to prepare the binaries, terminal, and shell to use later in pods.
-- **`config/`** is mounted read-only into pods. Its scripts (`configure-pod.sh`, `ez/setup-ezsh-in-docker.sh`) run **inside** the container as `poduser`.
+- **`config/`** is mounted read-only into pods. Its scripts (`configure-pod.sh`, `ez/setup-ezsh-in-pod.sh`) are to run **inside** the container as `poduser`.
 
 ## Usage
 

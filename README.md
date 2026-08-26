@@ -37,13 +37,14 @@ podman-compose -f compose.yaml build
 # 3. One-time: create the shared external network
 podman network create internet-net
 
-# 4. REVIEW AND ALLOW THE NETWORK SOURCES YOU NEED FOR THIS CONTAINFED (default only allows APT sources and HOST:8085 everyting else is denied)
+# 4. REVIEW AND ALLOW THE NETWORK SOURCES YOU NEED FOR THIS CONTAINER 
+# (default config here only allows APT sources and HOST:8085 everyting else is denied)
 nano mypods/agents/proxy/squid.conf
 
 # 5. Build and start the agents pod (container + proxy)
 cd mypods/agents
 
-# On Ubuntu 26.04 or Debian 13, or any newer OS with Podman ≥ 5.0
+# On Ubuntu 26.04 or Debian 13, or any newer OS with Podman ≥ 5.0; ignore podman warnings
 podman-compose --in-pod false up -d --build
 
 # On Ubuntu 24.04 and older versions of Podman use:
@@ -65,7 +66,7 @@ You're in. From inside the pod:
 - Your code lives at `/home/poduser/projects`
 - Shared configs are at `/home/poduser/config` (read-only)
 - `sudo` works with the password you set in step 1
-- **All outbound traffic is blocked by default** — only the domains listed in `mypods/agents/proxy/squid.conf` are reachable. Edit that file and run `podman-compose restart` (inside `mypods/agents`) to apply changes.
+- **Outbound traffic is blocked by default** — only the domains listed in `mypods/agents/proxy/squid.conf` are reachable (includes APT sources by default). Edit that file and run `podman-compose restart` (inside `mypods/agents`) to apply changes.
 
 > Optional, after the pod is running: prep agent binaries, shell aliases and Kitty on the host with the `host-tools/*.sh` scripts. See [`host-tools/README.md`](host-tools/README.md).
 

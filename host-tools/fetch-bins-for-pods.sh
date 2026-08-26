@@ -58,7 +58,7 @@ for entry in "${TOOLS[@]}"; do
   if [ "$extract" = "true" ]; then
     # Extract into a staging dir, then flatten into BINS_DIR
     stage="$(mktemp -d)"
-    # try xz/tar; if it's a plain tar.gz the -J handles .gz too
+    # -xJ only reads .xz; a plain tar.gz fails here and is handled by the -xzf fallback
     if tar -xJf "$tmp" -C "$stage" 2>/dev/null || tar -xzf "$tmp" -C "$stage" 2>/dev/null; then
       # find the first executable-like file and place it under $name
       found=""
