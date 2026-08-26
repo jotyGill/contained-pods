@@ -9,7 +9,10 @@ echo "Setting up DNS isolation via $PROXY_NAME..."
 
 PROXY_IP=""
 for i in $(seq 1 "$MAX_RETRIES"); do
-    PROXY_IP=$(getent hosts "$PROXY_NAME" | awk '{print $1}' | head -n1)
+    # `|| true` guards the assignment: with `set -e`, a failing `getent` (exit 2)
+    # + pipefail would otherwise kill the script on attempt 1, making the retry
+    # loop dead code. This is timing/host-dependent (works on some distros).
+    PROXY_IP=$(getent hosts "$PROXY_NAME" 2>/dev/null | awk '{print $1}' | head -n1 || true)
     if [ -n "$PROXY_IP" ]; then
         echo "Resolved $PROXY_NAME to $PROXY_IP"
         break

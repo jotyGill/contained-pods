@@ -29,6 +29,7 @@ RUN apt-get update && \
         python3-venv \
         python3-requests \
         pipx \
+        ripgrep \
     && rm -rf /var/lib/apt/lists/* && \
     ln -s $(which fdfind) /usr/local/bin/fd
 
@@ -64,11 +65,6 @@ RUN apt-get update && \
 #     && rm -rf /var/lib/apt/lists/* && \
 #     ln -s $(which fdfind) /usr/local/bin/fd
 
-# Install ripgrep (specific version via .deb)
-RUN curl -LO https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep_15.2.0-1_amd64.deb && \
-    dpkg -i ripgrep_15.2.0-1_amd64.deb && \
-    rm ripgrep_15.2.0-1_amd64.deb
-
 # Create user and set password from build arg
 RUN USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
     if [ -n "${USER_TO_DELETE}" ]; then \
@@ -77,6 +73,7 @@ RUN USER_TO_DELETE=$(getent passwd ${THE_USER_UID} | cut -d: -f1) && \
     fi && \
     groupadd -g ${THE_USER_GID} ${THE_USER_NAME} && \
     useradd -m -d "/home/${THE_USER_NAME}" -s /bin/bash -u ${THE_USER_UID} -g ${THE_USER_GID} ${THE_USER_NAME} && \
+    if [ -z "$PODUSER_PASSWORD" ]; then echo "ERROR: PODUSER_PASSWORD is empty — export it before building: export PODUSER_PASSWORD='your-password'"; exit 1; fi && \
     echo "${THE_USER_NAME}:${PODUSER_PASSWORD}" | chpasswd
 
 # Install application (customize this section for your needs)

@@ -1,1 +1,6 @@
 .git
+config/
+mypods/*/projects/
+mypods/*/proxy/logs/
+trash/
+__pycache__/
