@@ -133,6 +133,17 @@ install_fonts() {
 }
 install_fonts
 
+# Download gitstatusd binary, so pods don't try to fetch it on first use
+install_gitstatusd() {
+    local cache_dir="$EZSH_CONFIG_DIR/.cache/gitstatus"
+    mkdir -p "$cache_dir"
+    local file="gitstatusd-linux-x86_64" version="v1.5.4"
+    [ -f "$cache_dir/$file" ] || { echo "Downloading gitstatusd ($version)..."; \
+        wget -q "https://github.com/romkatv/gitstatus/releases/download/$version/$file.tar.gz" -O - | tar -xz -C "$cache_dir" "$file"; \
+        chmod +x "$cache_dir/$file"; echo "✓ gitstatusd binary installed at $cache_dir/$file"; }
+}
+install_gitstatusd
+
 cp -f "$(dirname "$0")/files-to-be-copied-into-config/setup-ezsh-in-pod.sh" "$(dirname "$0")/../config/ez/setup-ezsh-in-pod.sh"
 
 echo "Installation complete. ezsh installed to: $EZSH_CONFIG_DIR"

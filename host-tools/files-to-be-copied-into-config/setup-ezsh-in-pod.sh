@@ -42,7 +42,10 @@ FZF_TAB="$EZSH_DIR/oh-my-zsh/custom/plugins/fzf-tab/fzf-tab.plugin.zsh"
 [ -f "$FZF_TAB" ] && [ -x "$(command -v zsh)" ] && \
     PATH="$EZSH_DIR/fzf/bin:$PATH" zsh -c "source '$FZF_TAB' && build-fzf-tab-module" 2>/dev/null || true
 
-# set zsh as default shell
-chsh -s /usr/bin/zsh
+# Provide gitstatusd binary so powerlevel10k doesn't fetch it on first use
+if [ -f "$EZSH_DIR/.cache/gitstatus/gitstatusd-linux-x86_64" ]; then
+    mkdir -p "$HOME/.cache/gitstatus"
+    link "$EZSH_DIR/.cache/gitstatus/gitstatusd-linux-x86_64" "$HOME/.cache/gitstatus/gitstatusd-linux-x86_64"
+fi
 
-echo "Setup complete. exec zsh"
+echo "Setup complete. execute zsh"
