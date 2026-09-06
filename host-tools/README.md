@@ -65,11 +65,12 @@ podman-compose restart
 
 ```bash
 podman exec -it --user poduser agents-contained bash
-cd /home/poduser/config/
+
+# copy the scripts to a writable folder (e.g. ~/projects) and run there
+cp /home/poduser/config/install-deepseek-harness.sh /home/poduser/config/run-deepseek-harness.sh ~/projects/
+cd ~/projects/
 ./install-deepseek-harness.sh
 ./run-deepseek-harness.sh -u user --pass-stdin --host-ip 192.168.1.50   # host-ip is your HOST's local IP, password on stdin
 # => Open link from the host including the token : https://192.168.1.50:3080/?token=...
 # stop: ./run-deepseek-harness.sh stop
 ```
-
-Required flags: `-u USER`, a password (`-p` or `--pass-stdin`), and `-i HOST-IP`.
