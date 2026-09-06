@@ -9,12 +9,12 @@ set -e
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --dir PATH    Installation directory (default: ../config/ez/ezsh-installed)"
+    echo "  --dir PATH    Installation directory (default: ../config/ezsh-installed)"
     echo "  -h, --help   Show this help message"
     exit 0
 }
 
-INSTALL_DIR="../config/ez/ezsh-installed"
+INSTALL_DIR="../config/ezsh-installed"
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) usage ;;
