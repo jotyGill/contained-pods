@@ -9,7 +9,8 @@ services:
       network: host            ## this host network link is only for build time installs
       args:
         - PROXY_HOSTNAME=${VARIANT}-contained-proxy
-    # ports:
+    ports:
+        - "3080:3080" # Export DeepSeek Harness defalut port
     #   - "2222:22" # Allows SSH from host
     volumes:
       - ./projects:/home/poduser/projects:rw
