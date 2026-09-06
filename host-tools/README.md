@@ -34,7 +34,7 @@ cd host-tools
 bash ./setup-kitty.sh
 bash ./fetch-bins-for-pods.sh
 bash ./setup-ezsh-from-host.sh
-cp ./files-to-be-copied-into-config/configure-pod.sh ../config/
+cp -r ./files-to-be-copied-into-config/* ../config/
 
 # configure-pod.sh is my example config, update it with your configs and files to want to use in the pods
 
@@ -69,8 +69,8 @@ podman exec -it --user poduser agents-contained bash
 # copy the scripts to a writable folder (e.g. ~/projects) and run there
 cp /home/poduser/config/install-deepseek-harness.sh /home/poduser/config/run-deepseek-harness.sh ~/projects/
 cd ~/projects/
-./install-deepseek-harness.sh
-./run-deepseek-harness.sh -u user --pass-stdin --host-ip 192.168.1.50   # host-ip is your HOST's local IP, password on stdin
+bash ./install-deepseek-harness.sh
+bash ./run-deepseek-harness.sh -u user --pass-stdin --host-ip 192.168.1.50   # host-ip is your HOST's local IP, password on stdin
 # => Open link from the host including the token : https://192.168.1.50:3080/?token=...
 # stop: ./run-deepseek-harness.sh stop
 ```
