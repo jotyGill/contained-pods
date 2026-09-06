@@ -1,7 +1,9 @@
 FROM localhost/contained-pods:latest
 
-# Build argument for proxy hostname (per-variant, e.g. agents-contained-proxy)
-ARG PROXY_HOSTNAME=${VARIANT}-contained-proxy
+# Build argument for proxy hostname (compose overrides it per-variant with
+# "${VARIANT}-contained-proxy"; Dockerfile defaults can't interpolate compose
+# variables, keeping a plain fallback here)
+ARG PROXY_HOSTNAME=contained-proxy
 
 USER root
 
