@@ -23,17 +23,22 @@ for bin in "$CONFIG_DIR"/bins/*; do
     ln -sf "$bin" /home/poduser/.local/bin/
 done
 
-# --- Directories: copy contents into the target dir (not as a subdir) ---
-cp -r "$CONFIG_DIR/agents/maki-config/."     /home/poduser/.config/maki/
-cp -r "$CONFIG_DIR/agents/skills/."          /home/poduser/.pi/agent/skills/
+# --- Directories: copy config contents into the target dirs ---
+if [ -d "$CONFIG_DIR/agents/maki-config" ]; then
+    mkdir -p /home/poduser/.config/maki
+    cp -r "$CONFIG_DIR/agents/maki-config/." /home/poduser/.config/maki/
+fi
+if [ -d "$CONFIG_DIR/agents/skills" ]; then
+    cp -r "$CONFIG_DIR/agents/skills/." /home/poduser/.pi/agent/skills/
+fi
 
 # --- Files (copy, preserving path/name like the old symlinks) ---
-cp -f "$CONFIG_DIR/configfiles/.gitconfig"        /home/poduser/.gitconfig
+[ -f "$CONFIG_DIR/configfiles/.gitconfig" ] && cp -f "$CONFIG_DIR/configfiles/.gitconfig" /home/poduser/.gitconfig
 
-cp -f "$CONFIG_DIR/agents/opencode.jsonc"          /home/poduser/.config/opencode/opencode.jsonc
-cp -f "$CONFIG_DIR/agents/pimodels.config"         /home/poduser/.pi/agent/models.json
-cp -f "$CONFIG_DIR/agents/pisettings.json"         /home/poduser/.pi/agent/settings.json
-cp -f "$CONFIG_DIR/agents/catppuccin-mocha.json"   /home/poduser/.pi/agent/themes/catppuccin-mocha.json
+[ -f "$CONFIG_DIR/agents/opencode.jsonc" ] && cp -f "$CONFIG_DIR/agents/opencode.jsonc" /home/poduser/.config/opencode/opencode.jsonc
+[ -f "$CONFIG_DIR/agents/pimodels.config" ] && cp -f "$CONFIG_DIR/agents/pimodels.config" /home/poduser/.pi/agent/models.json
+[ -f "$CONFIG_DIR/agents/pisettings.json" ] && cp -f "$CONFIG_DIR/agents/pisettings.json" /home/poduser/.pi/agent/settings.json
+[ -f "$CONFIG_DIR/agents/catppuccin-mocha.json" ] && cp -f "$CONFIG_DIR/agents/catppuccin-mocha.json" /home/poduser/.pi/agent/themes/catppuccin-mocha.json
 
 # --- npm prefix (if npm is present) ---
 command -v npm >/dev/null 2>&1 && npm config set prefix ~/.npm-global
