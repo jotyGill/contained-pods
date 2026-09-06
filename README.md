@@ -16,8 +16,8 @@ Spinup Podman containers with network isolation and traffic logging to run codin
 ## Prerequisites
 
 - **Podman** and **podman-compose**: `sudo apt install podman podman-compose`
-- TUI coding agents misbehave when you copy/paste from them when they're running inside any container. Use a terminal emulator that handles this properly, e.g. [kitty](https://github.com/kovidgoyal/kitty) `host-tools/setup-kitty.sh`.
-- You can run the scripts from `host-tools` to have a batteries included setup. They can setup Kitty, download agent binaries for the pods like opencode, pi, maki, herdr, agent-browser, configure ezsh for pods etc.
+- TUI coding agents misbehave when you try to copy/paste from them when they're running inside any container. Use a terminal emulator that handles this properly, e.g. [kitty](https://github.com/kovidgoyal/kitty) `host-tools/setup-kitty.sh`. DeepSeek Harness web interface is nice alternative to bypass these issues.
+
 ---
 
 ## Quick Start (run the shipped `agents` pod)
@@ -31,7 +31,7 @@ sudo apt install podman podman-compose
 # 1. Give the container's 'poduser' account a password (used for sudo inside).
 export PODUSER_PASSWORD='replace-with-a-password'
 
-# 2. One-time: build the base image
+# 2. One-time: build the base image; ignore warnings :)
 podman-compose -f compose.yaml build
 
 # 3. One-time: create the shared external network
@@ -44,7 +44,7 @@ nano mypods/agents/proxy/squid.conf
 # 5. Build and start the agents pod (container + proxy)
 cd mypods/agents
 
-# On Ubuntu 26.04 or Debian 13, or any newer OS with Podman ≥ 5.0; ignore podman warnings
+# On Ubuntu 26.04 or Debian 13, or any newer OS with Podman ≥ 5.0
 podman-compose --in-pod false up -d --build
 
 # On Ubuntu 24.04 and older versions of Podman use:
@@ -59,6 +59,10 @@ podman ps -a
 
 # 7. Jump inside the pod as 'poduser'
 podman exec -it --user poduser agents-contained bash
+
+# Pods don't auto start after reboot; start when you need them
+cd mypods/agents
+podman-compose start
 ```
 
 You're in. From inside the pod:
@@ -67,9 +71,7 @@ You're in. From inside the pod:
 - Shared configs are at `/home/poduser/config` (read-only)
 - `sudo` works with the password you set in step 1
 - **Outbound traffic is blocked by default** — only the domains listed in `mypods/agents/proxy/squid.conf` are reachable (includes APT sources by default). Edit that file and run `podman-compose restart` (inside `mypods/agents`) to apply changes.
-
-> Optional, after the pod is running: prep agent binaries, shell aliases and Kitty on the host with the `host-tools/*.sh` scripts. See [`host-tools/README.md`](host-tools/README.md).
-
+- Optional, after the pod is running: You can run the scripts from `host-tools` to have a batteries included setup. They can setup Kitty, download coding agents/harnesses for the pods like *opencode*, *pi* , *deepseek-harness*, *maki*, *herdr*, agent-browser, configure ezsh for pods etc.  See [`host-tools/README.md`](host-tools/README.md).
 ---
 
 ## Squid Log Viewer
@@ -394,11 +396,10 @@ podman-compose start
 | Issue | Fix |
 |-------|-----|
 | `localhost/contained-pods:latest` not found | Run `podman-compose -f compose.yaml build` from project root first |
-| Container can't reach allowed domains | Check proxy is running: `podman ps \| grep proxy` |
-| Proxy config changes not taking effect | Edit `proxy/squid.conf` then `podman restart <variant>-contained-proxy` then `podman restart <variant>-contained`|
+| Container can't reach allowed domains | Check proxy is running: `podman ps -a` |
+| Proxy config changes not taking effect | Edit `proxy/squid.conf` then `cd mypods/<variant>` then `podman-compose restart`|
 | Build fails / password not set | Ensure `PODUSER_PASSWORD` is exported before building the base image |
 | Variant won't start (network error) | Ensure `internet-net` exists: `podman network create internet-net` |
-| `podman exec` access denied | Ensure `PODUSER_PASSWORD` was set correctly during base image build |
 
 ---
 </details>
