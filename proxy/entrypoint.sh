@@ -1,17 +1,6 @@
 #!/bin/bash
 set -e
 
-# Detect interfaces by IP (names are non-deterministic in Podman)
-INT_IP=$(ip -o -4 addr show | awk '{print $4}' | grep -vE '^169\.254|^127\.' | head -n1)
-EXT_IP=$(ip -o -4 addr show | awk '{print $4}' | grep -vE '^169\.254|^127\.' | tail -n1)
-
-if [ -n "$INT_IP" ]; then
-    echo "Internal interface IP: $INT_IP"
-fi
-if [ -n "$EXT_IP" ]; then
-    echo "External interface IP: $EXT_IP"
-fi
-
 # Clean up stale PID file from previous run or squid -z
 rm -f /run/squid.pid
 
