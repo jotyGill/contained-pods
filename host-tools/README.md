@@ -11,7 +11,7 @@ Scripts to run **on the host** to prepare the binaries, terminal, and shell to u
 |--------|-----------|---------|
 | `setup-kitty.sh` | host | Install the [kitty](https://github.com/kovidgoyal/kitty) terminal emulator from the latest release |
 | `fetch-bins-for-pods.sh` | host | Download the latest versions of the static binaries (opencode, pi, maki, ...) used by pods into `../config/bins/` |
-| `setup-ezsh-from-host.sh` | host | Install ezsh into a folder for pods (`config/ez/ezsh-installed`) |
+| `setup-ezsh-from-host.sh` | host | Install ezsh into a folder for pods (`config/ezsh-installed`) |
 
 ## In-pod scripts
 
@@ -41,7 +41,7 @@ cp -r ./files-to-be-copied-into-config/* ../config/
 # Then build a pod and configure it from inside (see project README)
 podman exec -it --user poduser <variant>-contained zsh
 bash /home/poduser/config/configure-pod.sh
-bash /home/poduser/config/ez/setup-ezsh-in-pod.sh
+bash /home/poduser/config/setup-ezsh-in-pod.sh
 ```
 
 ## DeepSeek Harness

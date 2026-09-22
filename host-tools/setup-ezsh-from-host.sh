@@ -144,7 +144,8 @@ install_gitstatusd() {
 }
 install_gitstatusd
 
-cp -f "$(dirname "$0")/files-to-be-copied-into-config/setup-ezsh-in-pod.sh" "$(dirname "$0")/../config/ez/setup-ezsh-in-pod.sh"
+mkdir -p "$(dirname "$0")/../config"
+cp -f "$(dirname "$0")/files-to-be-copied-into-config/setup-ezsh-in-pod.sh" "$(dirname "$0")/../config/setup-ezsh-in-pod.sh"
 
 echo "Installation complete. ezsh installed to: $EZSH_CONFIG_DIR"
-echo "In pods: run config/ez/setup-ezsh-in-pod.sh to configure them to use ezsh."
+echo "In pods: run config/setup-ezsh-in-pod.sh to configure them to use ezsh."
