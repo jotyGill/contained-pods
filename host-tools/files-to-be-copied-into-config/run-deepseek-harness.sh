@@ -1,32 +1,39 @@
 #!/usr/bin/env bash
-# Start the DeepSeek Harness web UI detached: dsh listens on 127.0.0.1:PORT+1,
-# a relay owns 0.0.0.0:PORT (Basic auth gate, byte-verbatim pipe). dsh is
-# launched with --trusted-host HOST so the browser's real Host/Origin pass the
-# /api fence. No pidfiles: processes are found by cmdline and stopped by
-# process group. dsh.log is the only state written.
+# What this does:
+#   Deepseek Harness normally only listens on localhost interface and can't be easliy used from pods.
+#   This script runs the DeepSeek Harness web UI (dsh) in the background and puts a proxy
+#   with HTTPS using a self-signed certificate and password-protected
+#   (Basic auth) access in front of it, so you can open the UI from the host
+#   machine or any device on the network using the user/password you
+#   provide. By default both the Basic auth user/password and the token URL
+#   dsh prints at startup are needed to reach the web UI.
+#   You can skip the token requirement by passing --no-token then visiting https://HOSTIP:3080/dsh
 #
-# Usage: ./run-deepseek-harness.sh -u USER (-p PASS | --pass-stdin) --host-ip ADDR [--port N] [dsh web args]
+# Usage: ./run-deepseek-harness.sh -u USER [-p PASS] --host-ip ADDR [--port N] [--no-token] [dsh web args]
 #        ./run-deepseek-harness.sh stop
 set -euo pipefail
 
 PUBLIC=3080           # relay port on 0.0.0.0; dsh uses PUBLIC+1 on loopback
 BASIC_USER=""; BASIC_PASS=""; HOST=""
 TLS_CERT=""; TLS_KEY=""; TLS_ENABLED=1   # TLS on by default; cert auto-generated
+NO_TOKEN=0            # --no-token: /dsh auto-redirects to the token URL, bypassing it (Basic auth still needed); off by default
 
 usage() {
   cat >&2 <<'EOF'
-usage: ./run-deepseek-harness.sh -u USER (-p PASS | --pass-stdin) --host-ip ADDR [--port N] [dsh web args]
+usage: ./run-deepseek-harness.sh -u USER [-p PASS] --host-ip ADDR [--port N] [--no-token] [dsh web args]
        ./run-deepseek-harness.sh stop
   -u, --user USER    Basic auth user
-  -p, --pass PASS    Basic auth password
-      --pass-stdin   read the password from stdin (preferred in login shells)
+  -p, --pass PASS    Basic auth password (prompted for, hidden, if omitted)
   -i, --host-ip ADDR IP/hostname clients reach this box on (IPv4 or hostname)
+      --no-token     Skip the token URL dsh prints at startup: /dsh redirects
+                     straight to it, so Basic auth alone gets you in
       --port N       relay port (default 3080); dsh uses N+1 on loopback
       --tls-cert FILE TLS cert PEM (default $PWD/tls-cert.pem; self-signed if missing)
       --tls-key FILE  TLS key PEM  (default $PWD/tls-key.pem; generated if missing)
       --no-tls        serve plain HTTP instead of TLS (default is TLS)
   -h, --help         show this help
-  Run needs: -u USER, a password (-p PASS or --pass-stdin), and -i/--host-ip ADDR.
+  Run needs: -u USER, -i/--host-ip ADDR, and a password (-p PASS, or a hidden
+  interactive prompt when -p is omitted; a non-terminal stdin then fails).
 EOF
   exit 1
 }
@@ -40,7 +47,6 @@ while [[ $# -gt 0 ]]; do
                     BASIC_USER=$2; shift 2 ;;
     -p|--pass)      [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 1; }
                     BASIC_PASS=$2; shift 2 ;;
-    --pass-stdin)   BASIC_PASS=$(head -n 1); shift ;;
     -i|--host-ip)   [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 1; }
                     HOST=$2; shift 2 ;;
     --port)         [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 1; }
@@ -50,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --tls-key)      [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 1; }
                     TLS_KEY=$2; shift 2 ;;
     --no-tls)       TLS_ENABLED=0; shift ;;
+    --no-token)     NO_TOKEN=1; shift ;;
     -h|--help)      usage ;;
     *)              args+=("$1"); shift ;;
   esac
@@ -99,12 +106,23 @@ if (( stopping )); then
   [[ -z $port_given && ${#args[@]} -eq 0 ]] || { echo "stop takes no other arguments" >&2; exit 1; }
   stop_by relay "$RELAY_STOP_PATTERN"
   stop_by dsh "$DSH_PATTERN"
+  rm -f "$(dirname "$0")/dsh-token-url"   # stale token URL used by --no-token /dsh
   exit 0
 fi
 
 [[ -n $BASIC_USER ]] || { echo "missing --user (see: $0 --help)" >&2; exit 1; }
-[[ -n $BASIC_PASS ]] || { echo "missing --pass / --pass-stdin (see: $0 --help)" >&2; exit 1; }
 [[ -n $HOST ]] || { echo "missing --host-ip (see: $0 --help)" >&2; exit 1; }
+
+# No -p: ask for the password with echo off, so it never lands in shell history
+# or the process listing. Prompts go to stderr, keeping stdout clean. Without a
+# terminal there is nobody to ask, so refuse rather than hang or read garbage.
+if [[ -z $BASIC_PASS ]]; then
+  [[ -t 0 ]] || { echo "no --pass given and stdin is not a terminal -- pass -p PASS" >&2; exit 1; }
+  # bash sends the -p prompt to stderr on its own when stdin is a terminal.
+  read -r -s -p "Set Password For Basic Auth: " BASIC_PASS || exit 1
+  echo "" >&2
+  [[ -n $BASIC_PASS ]] || { echo "empty password" >&2; exit 1; }
+fi
 
 export PATH="$HOME/.local/node/bin:$PATH"
 export NODE_USE_ENV_PROXY=1    # node's fetch honors proxy env vars
@@ -114,7 +132,9 @@ cd "$(dirname "$0")"
 LOG="$PWD/dsh.log"
 
 # TLS: default on. Resolve cert/key paths, generating a self-signed cert here
-# if none exists (openssl required then). SCHEME drives the printed URL.
+# if none exists (openssl required then). With TLS on the relay listens for TLS
+# only -- a cleartext HTTP request to that port gets no response at all.
+# SCHEME drives the printed URL.
 SCHEME=http
 if (( TLS_ENABLED )); then
   TLS_CERT=${TLS_CERT:-$PWD/tls-cert.pem}
@@ -170,6 +190,12 @@ done
 RELAY_JS='
   const net = require("node:net"), tls = require("node:tls");
   const crypto = require("node:crypto"), fs = require("node:fs");
+  // A Location value must stay a plain absolute http(s) URL: no control
+  // characters or spaces (header injection), no markup, bounded length.
+  const BAD = /[<>\x27"\\]/;
+  const safeUrl = s =>
+    s.length <= 2048 && /^[\x21-\x7e]+$/.test(s) && !BAD.test(s)
+    && /^https?:\/\//.test(s) ? s : "";
   const p = Number(process.env.DSH_RELAY_PORT);
   const up = Number(process.env.DSH_UPSTREAM_PORT);
   let cred = "";
@@ -181,6 +207,18 @@ RELAY_JS='
     const want = Buffer.from("Basic " + Buffer.from(cred).toString("base64"));
     const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(a, b);
     const TC = process.env.DSH_TLS_CERT, TK = process.env.DSH_TLS_KEY;
+    // TLS and plain listening are mutually exclusive: if a cert was named the
+    // key must be there too, rather than quietly serving cleartext.
+    if (Boolean(TC) !== Boolean(TK)) {
+      console.error("relay: need both DSH_TLS_CERT and DSH_TLS_KEY (or neither)");
+      process.exit(1);
+    }
+    // Only headers on replies the relay itself generates can be set here; the
+    // proxied stream stays byte-verbatim so the /api Host/Origin fence holds.
+    const HSTS = TC ? "Strict-Transport-Security: max-age=31536000\r\n" : "";
+    // GET /dsh (behind Basic auth) redirects to the token URL, read per
+    // request because the relay starts before dsh prints its token.
+    const tokFile = process.env.DSH_TOKEN_FILE || "";
     const sopts = TC ? { cert: fs.readFileSync(TC), key: fs.readFileSync(TK) } : {};
     const server = (TC ? tls.createServer : net.createServer)(sopts, s => {
       let buf = Buffer.alloc(0);
@@ -191,13 +229,27 @@ RELAY_JS='
         const m = buf.subarray(0, end).toString("latin1").match(/^authorization:[ \t]*(.+?)[ \t]*$/im);
         if (m && eq(Buffer.from(m[1], "latin1"), want)) {
           s.removeListener("data", onData);
+          if (tokFile) {
+            const line = buf.subarray(0, end).toString("latin1").split("\r\n", 1)[0];
+            if (line.startsWith("GET ") && line.split(" ")[1] === "/dsh") {
+              let tokUrl = "";
+              try {
+                tokUrl = safeUrl(fs.readFileSync(tokFile, "latin1").split("\n", 1)[0].trim());
+              } catch {}
+              if (tokUrl) {
+                s.end("HTTP/1.1 302 Found\r\nLocation: " + tokUrl + "\r\n" + HSTS +
+                      "Content-Length: 0\r\nConnection: close\r\n\r\n");
+                return;
+              }
+            }
+          }
           const u = net.connect(up, "127.0.0.1");
           u.on("error", () => s.destroy());
           s.on("error", () => u.destroy());
           u.on("connect", () => { u.write(buf); s.pipe(u); u.pipe(s); });
         } else {
           s.end("HTTP/1.1 401 Unauthorized\r\n" +
-                "WWW-Authenticate: Basic realm=\"dsh\"\r\n" +
+                "WWW-Authenticate: Basic realm=\"dsh\"\r\n" + HSTS +
                 "Content-Length: 0\r\nConnection: close\r\n\r\n");
           s.destroy();
         }
@@ -212,12 +264,13 @@ RELAY_JS='
 
 : > "$LOG"
 chmod 600 "$LOG"   # the log holds the /api launch token
-echo "==> Starting dsh web on 127.0.0.1:$INTERNAL (log: $LOG)"
+rm -f "$PWD/dsh-token-url"   # drop any token URL left over from an earlier run (e.g. a --no-token one)
+echo "==> Starting dsh webui on 127.0.0.1:$INTERNAL"
 setsid bash -c 'internal=$1; trust=$2; shift 2; \
   exec dsh web --no-open --port "$internal" --trusted-host "$trust" "$@"' \
   _ "$INTERNAL" "$HOST" ${args[@]+"${args[@]}"} >>"$LOG" 2>&1 < /dev/null &
 
-echo "==> Waiting for dsh on 127.0.0.1:$INTERNAL"
+# echo "==> Waiting for dsh on 127.0.0.1:$INTERNAL"
 ok=
 for _ in $(seq 1 60); do
   if (exec 3<>"/dev/tcp/127.0.0.1/$INTERNAL") 2>/dev/null; then ok=1; break; fi
@@ -230,6 +283,9 @@ done
 
 echo "==> Relaying 0.0.0.0:$PUBLIC -> 127.0.0.1:$INTERNAL (Basic auth user: $BASIC_USER)"
 export DSH_RELAY_PORT="$PUBLIC" DSH_UPSTREAM_PORT="$INTERNAL"
+# The /dsh redirect is opt-in (--no-token): without DSH_TOKEN_FILE the relay
+# proxies /dsh upstream verbatim, exactly like every other path.
+if (( NO_TOKEN )); then export DSH_TOKEN_FILE="$PWD/dsh-token-url"; fi
 [[ -n $TLS_CERT ]] && export DSH_TLS_CERT="$TLS_CERT"
 [[ -n $TLS_KEY ]]  && export DSH_TLS_KEY="$TLS_KEY"
 setsid node -e "$RELAY_JS" "$RELAY_MARKER" >>"$LOG" 2>&1 < <(printf '%s' "$BASIC_USER:$BASIC_PASS") &
@@ -240,11 +296,28 @@ if [[ -z $(find_pids "$RELAY_PATTERN") ]]; then
   exit 1
 fi
 
+# grep exits 1 while the token is not in the log yet; under pipefail that would
+# abort the script before the URL is reported, so neutralise it here.
+TOKEN=""
 for _ in $(seq 1 20); do
-  TOKEN=$(grep -o 'token=[^ ]*' "$LOG" | tail -1)
+  TOKEN=$(grep -o 'token=[^ ]*' "$LOG" | tail -1 || true)
   [[ -n $TOKEN ]] && break
   sleep 0.5
 done
-echo "==> Open from the host: $SCHEME://$HOST:$PUBLIC/?$TOKEN"
+URL="$SCHEME://$HOST:$PUBLIC/?$TOKEN"
+# With --no-token the relay reads this file per request and redirects /dsh to
+# it, so the token URL itself never has to be typed. Without the flag nothing
+# is written and the URL above is the only way in.
+if (( NO_TOKEN )) && [[ -n $TOKEN ]]; then
+  # Subshell umask so the file is 600 at creation (no world-readable window),
+  # and never write through a symlink planted in the gap since the rm above.
+  [[ -L $PWD/dsh-token-url ]] && rm -f "$PWD/dsh-token-url"
+  ( umask 077; printf '%s\n' "$URL" > "$PWD/dsh-token-url" )
+  echo "==> Visit $SCHEME://$HOST:$PUBLIC/dsh to automatically obtain the token"
+  echo "    (Give the harness a minute to fully start)"
+elif (( NO_TOKEN )); then
+  echo "warning: no token in the log yet; /dsh will not redirect until one appears (see $LOG)" >&2
+fi
+echo "==> Open from the host: $URL"
 echo "==> Detached. Log: $LOG"
 echo "==> Stop:  $0 stop"

@@ -93,4 +93,4 @@ else
 fi
 
 echo "==> All done. Start the web UI with:"
-echo "    ./run-deepseek-harness.sh -u USER --pass-stdin --host ADDR"
+echo "    ./run-deepseek-harness.sh -u USER -i HOST-IP   (prompts for the password)"
