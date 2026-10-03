@@ -48,7 +48,7 @@ bash /home/poduser/config/setup-ezsh-in-pod.sh
 
 Run inside the pod. This setup installs and bolts **TLS (self-signed by default) + HTTP Basic auth on top of dsh's own `/api` launch token**.
 
-*Requirement* : the pod needs to be able to access NPM related repos to install npm and deepseek-harness; uncomment NPM related domains in your pod e.g. mypods/agents/proxy/squid.conf.
+*Requirements* : Ensure you pod's port 3080 is exported to host in docker-compose file. The pod needs to be able to also access NPM related repos to install npm and deepseek-harness; uncomment NPM related domains in your pod e.g. mypods/agents/proxy/squid.conf.
 
 ```bash
 # NPM
@@ -70,7 +70,7 @@ podman exec -it --user poduser agents-contained bash
 cp /home/poduser/config/install-deepseek-harness.sh /home/poduser/config/run-deepseek-harness.sh ~/projects/
 cd ~/projects/
 bash ./install-deepseek-harness.sh
-bash ./run-deepseek-harness.sh -u user --pass-stdin --host-ip 192.168.1.50   # host-ip is your HOST's local IP, password on stdin
+bash ./run-deepseek-harness.sh -u user --host-ip 192.168.1.50   # host-ip is your HOST's local IP, password on stdin or supply using -p
 # => Open link from the host including the token : https://192.168.1.50:3080/?token=...
 # stop: ./run-deepseek-harness.sh stop
 ```
