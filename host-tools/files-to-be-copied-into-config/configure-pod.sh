@@ -15,7 +15,9 @@ mkdir -p /home/poduser/.local/bin/
 mkdir -p ~/.npm-global
 
 # --- Binaries: symlink every entry in bins/ into ~/.local/bin/ ---
+# nullglob: an empty or missing bins/ must not symlink the literal glob.
 mkdir -p /home/poduser/.local/bin/
+shopt -s nullglob
 for bin in "$CONFIG_DIR"/bins/*; do
     base="$(basename "$bin")"
     [ "$base" = "." ] && continue

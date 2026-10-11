@@ -37,10 +37,15 @@ fi
 # Generate fzf config
 [ -f "$EZSH_DIR/fzf/bin/fzf" ] && "$EZSH_DIR/fzf/bin/fzf" --zsh > "$HOME/.fzf.zsh"
 
-# Build fzf-tab
+# Build fzf-tab's optional compiled module. fzf-tab hardcodes FZF_TAB_HOME to
+# its own plugin dir, so the module can only live next to the plugin itself;
+# skip the build when the config mount is read-only. Without the module
+# fzf-tab falls back to its pure-zsh implementation, so this is cosmetic.
 FZF_TAB="$EZSH_DIR/oh-my-zsh/custom/plugins/fzf-tab/fzf-tab.plugin.zsh"
-[ -f "$FZF_TAB" ] && [ -x "$(command -v zsh)" ] && \
+FZF_TAB_DIR="$EZSH_DIR/oh-my-zsh/custom/plugins/fzf-tab"
+if [ -f "$FZF_TAB" ] && [ -x "$(command -v zsh)" ] && [ -w "$FZF_TAB_DIR" ]; then
     PATH="$EZSH_DIR/fzf/bin:$PATH" zsh -c "source '$FZF_TAB' && build-fzf-tab-module" 2>/dev/null || true
+fi
 
 # Provide gitstatusd binary so powerlevel10k doesn't fetch it on first use
 if [ -f "$EZSH_DIR/.cache/gitstatus/gitstatusd-linux-x86_64" ]; then
