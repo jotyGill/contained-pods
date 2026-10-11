@@ -28,8 +28,8 @@ usage: ./run-deepseek-harness.sh -u USER [-p PASS] --host-ip ADDR [--port N] [--
       --no-token     Skip the token URL dsh prints at startup: /dsh redirects
                      straight to it, so Basic auth alone gets you in
       --port N       relay port (default 3080); dsh uses N+1 on loopback
-      --tls-cert FILE TLS cert PEM (default $PWD/tls-cert.pem; self-signed if missing)
-      --tls-key FILE  TLS key PEM  (default $PWD/tls-key.pem; generated if missing)
+      --tls-cert FILE TLS cert PEM (default ~/.dsh/podwrapper/tls-cert.pem; self-signed if missing)
+      --tls-key FILE  TLS key PEM  (default ~/.dsh/podwrapper/tls-key.pem; generated if missing)
       --no-tls        serve plain HTTP instead of TLS (default is TLS)
   -h, --help         show this help
   Run needs: -u USER, -i/--host-ip ADDR, and a password (-p PASS, or a hidden
@@ -65,6 +65,12 @@ done
 [[ $PUBLIC =~ ^[1-9][0-9]*$ ]] || { echo "--port must be a number: $PUBLIC" >&2; exit 1; }
 (( PUBLIC <= 65534 )) || { echo "port $PUBLIC leaves no room for the internal port" >&2; exit 1; }
 INTERNAL=$((PUBLIC + 1))
+
+# This script may run from a read-only config mount, so all runtime state
+# (log, TLS cert/key, token URL) lives in a writable dir under $HOME instead
+# of next to the script. Override the location with DSH_STATE_DIR.
+STATE_DIR="${DSH_STATE_DIR:-$HOME/.dsh/podwrapper}"
+TOKEN_FILE="$STATE_DIR/dsh-token-url"
 
 # Command-line patterns for process discovery. Anchored so this script's own
 # cmdline never matches. The relay carries a unique argv marker.
@@ -106,7 +112,7 @@ if (( stopping )); then
   [[ -z $port_given && ${#args[@]} -eq 0 ]] || { echo "stop takes no other arguments" >&2; exit 1; }
   stop_by relay "$RELAY_STOP_PATTERN"
   stop_by dsh "$DSH_PATTERN"
-  rm -f "$(dirname "$0")/dsh-token-url"   # stale token URL used by --no-token /dsh
+  rm -f "$TOKEN_FILE"   # stale token URL used by --no-token /dsh
   exit 0
 fi
 
@@ -128,8 +134,8 @@ export PATH="$HOME/.local/node/bin:$PATH"
 export NODE_USE_ENV_PROXY=1    # node's fetch honors proxy env vars
 command -v node >/dev/null 2>&1 || { echo "node not found -- run ./install-deepseek-harness.sh first" >&2; exit 1; }
 
-cd "$(dirname "$0")"
-LOG="$PWD/dsh.log"
+mkdir -p "$STATE_DIR"
+LOG="$STATE_DIR/dsh.log"
 
 # TLS: default on. Resolve cert/key paths, generating a self-signed cert here
 # if none exists (openssl required then). With TLS on the relay listens for TLS
@@ -137,8 +143,8 @@ LOG="$PWD/dsh.log"
 # SCHEME drives the printed URL.
 SCHEME=http
 if (( TLS_ENABLED )); then
-  TLS_CERT=${TLS_CERT:-$PWD/tls-cert.pem}
-  TLS_KEY=${TLS_KEY:-$PWD/tls-key.pem}
+  TLS_CERT=${TLS_CERT:-$STATE_DIR/tls-cert.pem}
+  TLS_KEY=${TLS_KEY:-$STATE_DIR/tls-key.pem}
   if [[ ! -e $TLS_CERT || ! -e $TLS_KEY ]]; then
     command -v openssl >/dev/null 2>&1 || {
       echo "no TLS cert at $TLS_CERT and openssl not found -- install openssl," >&2
@@ -264,13 +270,14 @@ RELAY_JS='
 
 : > "$LOG"
 chmod 600 "$LOG"   # the log holds the /api launch token
-rm -f "$PWD/dsh-token-url"   # drop any token URL left over from an earlier run (e.g. a --no-token one)
+rm -f "$TOKEN_FILE"   # drop any token URL left over from an earlier run (e.g. a --no-token one)
 echo "==> Starting dsh webui on 127.0.0.1:$INTERNAL"
 setsid bash -c 'internal=$1; trust=$2; shift 2; \
   exec dsh web --no-open --port "$internal" --trusted-host "$trust" "$@"' \
   _ "$INTERNAL" "$HOST" ${args[@]+"${args[@]}"} >>"$LOG" 2>&1 < /dev/null &
 
-# echo "==> Waiting for dsh on 127.0.0.1:$INTERNAL"
+sleep 2
+echo "==> Waiting for dsh on 127.0.0.1:$INTERNAL"
 ok=
 for _ in $(seq 1 60); do
   if (exec 3<>"/dev/tcp/127.0.0.1/$INTERNAL") 2>/dev/null; then ok=1; break; fi
@@ -285,7 +292,7 @@ echo "==> Relaying 0.0.0.0:$PUBLIC -> 127.0.0.1:$INTERNAL (Basic auth user: $BAS
 export DSH_RELAY_PORT="$PUBLIC" DSH_UPSTREAM_PORT="$INTERNAL"
 # The /dsh redirect is opt-in (--no-token): without DSH_TOKEN_FILE the relay
 # proxies /dsh upstream verbatim, exactly like every other path.
-if (( NO_TOKEN )); then export DSH_TOKEN_FILE="$PWD/dsh-token-url"; fi
+if (( NO_TOKEN )); then export DSH_TOKEN_FILE="$TOKEN_FILE"; fi
 [[ -n $TLS_CERT ]] && export DSH_TLS_CERT="$TLS_CERT"
 [[ -n $TLS_KEY ]]  && export DSH_TLS_KEY="$TLS_KEY"
 setsid node -e "$RELAY_JS" "$RELAY_MARKER" >>"$LOG" 2>&1 < <(printf '%s' "$BASIC_USER:$BASIC_PASS") &
@@ -311,8 +318,8 @@ URL="$SCHEME://$HOST:$PUBLIC/?$TOKEN"
 if (( NO_TOKEN )) && [[ -n $TOKEN ]]; then
   # Subshell umask so the file is 600 at creation (no world-readable window),
   # and never write through a symlink planted in the gap since the rm above.
-  [[ -L $PWD/dsh-token-url ]] && rm -f "$PWD/dsh-token-url"
-  ( umask 077; printf '%s\n' "$URL" > "$PWD/dsh-token-url" )
+  [[ -L $TOKEN_FILE ]] && rm -f "$TOKEN_FILE"
+  ( umask 077; printf '%s\n' "$URL" > "$TOKEN_FILE" )
   echo "==> Visit $SCHEME://$HOST:$PUBLIC/dsh to automatically obtain the token"
   echo "    (Give the harness a minute to fully start)"
 elif (( NO_TOKEN )); then
