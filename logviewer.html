@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Squid Log Viewer</title>
+<title>Squid &amp; Dnsmasq Log Viewer</title>
 <style>
   :root{
     --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2a3340;
@@ -70,7 +70,7 @@
 </head>
 <body>
 <header>
-  <h1>🦑 Squid Log Viewer</h1>
+  <h1>🦑 Squid &amp; Dnsmasq Log Viewer</h1>
   <span class="legend" style="margin:0">
     <span><span class="dot" style="background:var(--block)"></span>Blocked</span>
     <span><span class="dot" style="background:var(--ok)"></span>Through</span>
@@ -90,11 +90,13 @@
   <div class="empty" id="empty">
     <div class="empty-card">
       <div class="ico">🦑</div>
-      <h2>Squid Log Viewer</h2>
+      <h2>Squid &amp; Dnsmasq Log Viewer</h2>
       <p>Select a pod from the dropdown above to view its logs.</p>
     </div>
   </div>
 </div>
+
+<div class="wrap" id="dnsApp" style="padding-top:0"></div>
 
 <div class="tip" id="tip"></div>
 
@@ -250,6 +252,166 @@ function renderUniq(){
   $('#uniqSearch').oninput=e=>{UNIQ.f=e.target.value;renderUniq();};
   $('#uniqOut').onchange=e=>{UNIQ.outcome=e.target.value;renderUniq();};
 }
+/* ---------- DNS (dnsmasq log) ---------- */
+const DNS_OK_TYPES=['A','AAAA','CNAME'];
+
+function parseDns(text){
+  // Syslog stamps carry no year and epoch time is not needed here: keep the
+  // raw stamp for display, and the line index for ordering (dnsmasq logs are
+  // chronological, so file order == time order).
+  // prototype-less maps: a queried name like "constructor" must not hit
+  // Object.prototype members.
+  const rows=[],replies=Object.create(null),cached=Object.create(null);
+  text.split(/\r?\n/).forEach(l=>{
+    // optional hostname: matches both direct dnsmasq output and rsyslog format
+    const mm=/^(\w{3}) +(\d+) ([\d:]{8})(?: \S+)? dnsmasq\[\d+\]: /.exec(l);
+    if(!mm)return;
+    const rest=l.slice(mm.index+mm[0].length);
+    const q=/^query\[([A-Z]+)\] (\S+) from (\S+)/.exec(rest);
+    if(q){rows.push({i:rows.length,int:isInternal(q[2]),stamp:mm[1]+' '+mm[2]+' '+mm[3],type:q[1],name:q[2],client:q[3],status:''});return;}
+    const rp=/^reply (\S+) is (\S+)/.exec(rest);
+    if(rp&&rp[1]!=='error')replies[rp[1]]=rp[2].startsWith('NODATA')?'nodata':rp[2];
+    // "reply error is SERVFAIL" carries no name -> attribute to the newest
+    // query still without a reply (sequential approximation).
+    const er=/^reply error is (\S+)/.exec(rest);
+    if(er){const last=rows[rows.length-1];if(last&&!last.status)last.status=er[1];}
+    const ca=/^cached (\S+)/.exec(rest);
+    if(ca)cached[ca[1]]='cached';
+  });
+  // r.status first: a sequential "reply error" attribution must not be
+  // overwritten by an older same-name reply from replies/cached.
+  rows.forEach(r=>{r.status=r.status||cached[r.name]||replies[r.name]||'';});
+  return rows;
+}
+
+function ent(s){const m={};for(const c of s)m[c]=(m[c]||0)+1;
+  let e=0;for(const k in m){const p=m[k]/s.length;e-=p*Math.log2(p);}return e;}
+function dnsBase(n){return /\.(in-addr|ip6)\.arpa$/.test(n)?n:n.split('.').slice(-2).join('.');}
+function isArpa(n){return /\.(in-addr|ip6)\.arpa$/.test(n);}
+// Podman/container infra noise: reverse lookups and the internal container
+// names (e.g. extagents-contained-proxy, contained-proxy). Kept in the raw
+// table (behind a toggle) but excluded from all stats and anomaly detection.
+function isInternal(n){return isArpa(n)||/(^|[._-])contained-proxy$/.test(n);}
+
+/* Exfil/anomaly heuristics over query names (dnsmasq logs names verbatim,
+   which is where DNS exfil payloads live). Returns deduped flags. */
+function dnsAnomalies(rows){
+  // NOTE: anomalies scan ALL rows (incl. "internal" names) on purpose, so
+  // exfil can't hide behind a name ending in -contained-proxy; only stats
+  // and the default table view filter those out. Arpa stays out of fan-out.
+  const fan=Object.create(null);
+  rows.forEach(r=>{if(!isArpa(r.name))
+    (fan[dnsBase(r.name)]||(fan[dnsBase(r.name)]=new Set())).add(r.name);});
+  const fanOut=Object.create(null);Object.entries(fan).forEach(([k,v])=>{if(v.size>20)fanOut[k]=v.size;});
+  const out=[],seen=new Set();
+  rows.forEach(r=>{
+    const add=rule=>{const key=r.name+'|'+rule;
+      if(!seen.has(key)){seen.add(key);out.push({...r,rule});}};
+    const labels=r.name.replace(/\.$/,'').split('.');
+    if(labels.some(x=>x.length>30))add('long label (>30)');
+    // entropy + digit requirement: real exfil payloads are base64/base32/hex;
+    // plain hostnames like "extagents-contained-proxy" must not fire.
+    if(labels.some(x=>x.length>=16&&ent(x)>3.5&&/[0-9]/.test(x)&&/[a-z]/.test(x)))add('high-entropy label');
+    if(!DNS_OK_TYPES.includes(r.type))add('rare type: '+r.type);
+    const fb=dnsBase(r.name);  // fan-out is flagged once per base domain
+    if(fanOut[fb]!==undefined){const key='fanout|'+fb;
+      if(!seen.has(key)){seen.add(key);
+        out.push({...r,rule:fanOut[fb]+' unique subdomains of '+fb});}}
+    if(r.status==='NXDOMAIN'||r.status==='SERVFAIL')add(r.status);
+  });
+  return out.sort((a,b)=>b.i-a.i);
+}
+
+let DANOM={flags:[],hideLoc:true};
+function isLocal(c){return c==='127.0.0.1'||c==='::1'||c==='localhost';}
+function renderAnom(){
+  const {flags,hideLoc}=DANOM;
+  const r=flags.filter(x=>!hideLoc||!isLocal(x.client)).slice(0,200);
+  // names the pods query about themselves (arpa / *contained-proxy) are
+  // expected infra noise: keep them in the scan, but mark them green
+  $('#anomBody').innerHTML=r.map(x=>`<tr>
+    <td>${esc(x.stamp)}</td><td>${esc(x.client)}</td><td>${esc(x.type)}</td>
+    <td class="url" title="${esc(x.name)}">${esc(x.name)}</td>
+    <td><span class="pill block">${esc(x.rule)}</span>${isInternal(x.name)?' <span class="pill through">Expected</span>':''}</td></tr>`).join('')
+    ||'<tr><td colspan="5" style="color:var(--muted)">'+(flags.length
+      ?'All '+flags.length+' flagged requests are from localhost — tick "show localhost" to view'
+      :'No anomalies detected')+'</td></tr>';
+}
+
+let DTBL={rows:[],f:'',type:'all',int:false};
+function renderDnsTable(){
+  const {rows,f,type,int}=DTBL;
+  const r=rows.filter(x=>(type==='all'||x.type===type)&&!(!int&&x.int)&&
+    (!f||(x.name+x.client).toLowerCase().includes(f.toLowerCase())))
+    .sort((a,b)=>b.i-a.i);
+  $('#dnsBody').innerHTML=r.slice(0,5000).map(x=>`<tr>
+    <td>${esc(x.stamp)}</td><td>${esc(x.client)}</td><td>${esc(x.type)}</td>
+    <td class="url" title="${esc(x.name)}">${esc(x.name)}</td>
+    <td>${x.status==='NXDOMAIN'||x.status==='SERVFAIL'
+        ?`<span class="pill block">${esc(x.status)}</span>`:esc(x.status||'-')}</td></tr>`).join('');
+  $('#dnsCount').textContent=r.length+` / ${rows.length}`+(r.length>5000?' ⚠ first 5000 shown':'');
+}
+
+function renderDns(rows){
+  const el=$('#dnsApp');
+  if(!rows||!rows.length){el.innerHTML='';return;}
+  const flags=dnsAnomalies(rows);
+  const ext=rows.filter(r=>!r.int);
+  const doms=Object.create(null),types=Object.create(null);
+  ext.forEach(r=>{doms[dnsBase(r.name)]=(doms[dnsBase(r.name)]||0)+1;
+    types[r.type]=(types[r.type]||0)+1;});
+  const errs=rows.filter(r=>r.status==='NXDOMAIN'||r.status==='SERVFAIL').length;
+  const top=Object.entries(doms).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const max=Math.max(1,...top.map(t=>t[1]));
+  el.innerHTML=`
+    <div class="c12" style="color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600;font-size:.82rem">🌐 DNS activity (dnsmasq)</div>
+    <div class="kpis">
+      <div class="kpi"><div class="v">${rows.length}</div><div class="l">DNS queries</div></div>
+      <div class="kpi"><div class="v">${ext.length}</div><div class="l">External queries</div></div>
+      <div class="kpi"><div class="v">${Object.keys(doms).length}</div><div class="l">Domains queried</div></div>
+      <div class="kpi"><div class="v">${Object.keys(types).length}</div><div class="l">Types: ${esc(Object.keys(types).join('/'))}</div></div>
+      <div class="kpi"><div class="v">${errs}</div><div class="l">NXDOMAIN/SERVFAIL</div></div>
+      <div class="kpi"><div class="v" style="color:${flags.length?'var(--block)':'var(--ok)'}">${flags.length}</div><div class="l">Anomalies / interesting DNS requests</div></div>
+    </div>
+    <div class="row">
+      <div class="card" style="width:260px;flex-shrink:0"><h2>Top queried domains</h2><div id="dnsTop"></div></div>
+      <div class="card" style="flex:1"><h2>🚩 Anomalies (possible exfil / errors / odd requests)</h2>
+        <div class="controls">
+          <label style="font-size:.8rem;color:var(--muted)"><input type="checkbox" id="dnsAnomLoc" style="width:auto;vertical-align:middle"> show localhost (127.0.0.1 / ::1) requests (${flags.filter(x=>isLocal(x.client)).length})</label>
+        </div>
+        <div class="tbl-wrap uniq-wrap"><table>
+          <thead><tr><th>Time</th><th>Client</th><th>Type</th><th>Name</th><th>Flag</th></tr></thead>
+          <tbody id="anomBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="card c12"><h2>DNS queries <span id="dnsCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="controls">
+        <input id="dnsSearch" placeholder="filter name / client…" style="min-width:240px">
+        <select id="dnsType"><option value="all">All types</option>
+          ${[...new Set(rows.map(r=>r.type))].sort().map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>
+        <label style="font-size:.8rem;color:var(--muted)"><input type="checkbox" id="dnsInt" style="width:auto;vertical-align:middle"> show internal requests by the pods (arpa / container names: ${rows.length-ext.length})</label>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Time</th><th>Client</th><th>Type</th><th>Name</th><th>Reply</th></tr></thead>
+        <tbody id="dnsBody"></tbody></table></div>
+    </div>`;
+  // %-width bars so they fit the narrow card (px bars overflowed 260px).
+  $('#dnsTop').innerHTML=top.map(([k,v])=>`<div style="margin:.25rem 0">
+      <div style="font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</div>
+      <div style="display:flex;height:14px;border-radius:4px;overflow:hidden;background:#0d1117">
+        <div style="width:${v/max*100}%;background:var(--accent)"></div></div></div>`).join('')
+    ||'<div style="color:var(--muted)">no domain data</div>';
+  DANOM={flags,hideLoc:true};
+  renderAnom();
+  DTBL={rows,f:'',type:'all',int:false};
+  renderDnsTable();
+  $('#dnsSearch').oninput=e=>{DTBL.f=e.target.value;renderDnsTable();};
+  $('#dnsType').onchange=e=>{DTBL.type=e.target.value;renderDnsTable();};
+  $('#dnsInt').onchange=e=>{DTBL.int=e.target.checked;renderDnsTable();};
+  $('#dnsAnomLoc').onchange=e=>{DANOM.hideLoc=!e.target.checked;renderAnom();};
+}
+
 function render(rows){
   $('#empty')?.remove();
   const k=kpis(rows);
@@ -306,26 +468,38 @@ function render(rows){
 }
 
 /* ---------- load ---------- */
-function doLoad(text,name){
+function doLoad(text,name,gen){
+  if(gen!==dnsGen)return;  // stale response: a newer pod load has taken over
   try{
     const rows=parse(text);
     if(rows.length)render(rows);
     else alert('No parseable Squid log lines found in "'+name+'"\n\nExpected format:\ntimestamp duration client squid_code/http_code size method url user mime');
   }catch(err){console.error(err);alert('Failed to parse log: '+err.message);}
 }
-function loadURL(url){
+function loadURL(url,gen){
   fetch(url)
     .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status+' '+r.statusText);return r.text();})
-    .then(t=>doLoad(t,url))
+    .then(t=>doLoad(t,url,gen))
     .catch(err=>{console.error('Failed to fetch log:',err);});
 }
 /* ---------- container discovery (when served over http(s)) ---------- */
 const chooser=$('#chooser');
 const containerSelect=$('#containerSelect');
+let CONTAINERS=[];
+let dnsGen=0;  // generation token: ignore stale squid/DNS fetches on fast pod switches
 
-function loadContainer(path){
-  // loadURL shows its own loading state on the Load URL button.
-  loadURL('/raw/' + encodeURIComponent(path));
+function loadContainer(c){
+  const gen=++dnsGen;  // bump even when this pod has no DNS log, to avoid stale renders
+  loadURL('/raw/' + encodeURIComponent(c.path), gen);
+  // drop the previous pod's DNS panel; a newer gen guards against it being
+  // re-rendered by a late-arriving stale fetch
+  $('#dnsApp').innerHTML='';
+  if(c.dns_path){
+    fetch('/raw/' + encodeURIComponent(c.dns_path))
+      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.text();})
+      .then(t=>{if(gen===dnsGen)renderDns(parseDns(t));})
+      .catch(err=>console.error('DNS log load failed:',err));
+  }
 }
 
 // When served over http(s) the server auto-discovers containers; hide the
@@ -335,6 +509,7 @@ if(location.protocol==='http:' || location.protocol==='https:'){
     .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(data=>{
       const list=(data && data.containers)||[];
+      CONTAINERS=list;
       containerSelect.innerHTML='<option value="">— select a pod —</option>';
       list.forEach(c=>{
         const o=document.createElement('option');
@@ -345,7 +520,7 @@ if(location.protocol==='http:' || location.protocol==='https:'){
       if(list.length===1){
         // exactly one container -> auto-load it
         containerSelect.value=list[0].path;
-        loadContainer(list[0].path);
+        loadContainer(list[0]);
       }
     })
     .catch(err=>{
@@ -357,8 +532,8 @@ if(location.protocol==='http:' || location.protocol==='https:'){
 }
 
 containerSelect.addEventListener('change',()=>{
-  const path=containerSelect.value;
-  if(path) loadContainer(path);
+  const c=CONTAINERS.find(x=>x.path===containerSelect.value);
+  if(c) loadContainer(c);
 });
 
 

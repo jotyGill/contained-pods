@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple Python server for Squid log viewer.
+"""Simple Python server for Network Traffic log viewer (Squid and Dnsmasq).
 
 Why this exists
 ================
@@ -12,8 +12,7 @@ Features
 ========
 - Serves logviewer.html itself at /
 - GET /api/containers  -> auto-discovers containers by locating
-                          */proxy/logs/squid-access.log under --root and
-                          returns {"containers":[{"name","path","size"},...]}
+                          */proxy/logs/squid-access.log and dnsmasq.log under --root
 - GET /raw/<relpath>   -> serves a discovered log's raw bytes.
 - CORS headers on every response, so a file:// page can still fetch.
 - Path-traversal guard: /raw/... is confined to --root.
@@ -72,12 +71,14 @@ def _container_name(log_relpath):
 def collect_containers(root):
     """Scan ``root`` for */proxy/logs/squid-access.log and group by container.
 
-    Returns a list of dicts: {"name","path","size"} where ``path`` is relative
-    to ``root`` and ``name`` is derived from the container dir name. If several
-    matches share the same container name (e.g. a stray copy under a git/work
-    tree), the shallowest one wins so the chooser stays clean.
+    Returns a list of dicts: {"name","path","size","dns_path"}
+    where ``path`` is relative to ``root`` and ``name`` is derived from the
+    container dir name. ``dns_path`` points to a dnsmasq.log next to the squid
+    log (or None). If several matches share the same container name (e.g. a
+    stray copy under a git/work tree), the shallowest one wins so the chooser
+    stays clean.
     """
-    found = {}  # name -> (depth, relpath, size)
+    found = {}  # name -> (depth, relpath, size, dns_rel)
     for dirpath, _dirs, files in os.walk(root):
         if os.path.basename(dirpath).startswith("."):
             continue
@@ -92,11 +93,15 @@ def collect_containers(root):
             size = os.path.getsize(log_path)
         except OSError:
             size = -1
+        dns_rel = None
+        if "dnsmasq.log" in files:
+            dns_rel = os.path.relpath(os.path.join(dirpath, "dnsmasq.log"), root)
         depth = rel.count(os.sep)
         prev = found.get(name)
         if prev is None or depth < prev[0]:
-            found[name] = (depth, rel, size)
-    return [{"name": n, "path": p, "size": s} for n, (_, p, s) in found.items()]
+            found[name] = (depth, rel, size, dns_rel)
+    return [{"name": n, "path": p, "size": s, "dns_path": d}
+            for n, (_, p, s, d) in found.items()]
 
 
 def safe_join(root, relpath):
@@ -110,6 +115,10 @@ def safe_join(root, relpath):
 
 
 class Handler(BaseHTTPRequestHandler):
+    # Base directory for /api/containers discovery and /raw/ serving; set in
+    # main(). Class-level because the whole process serves one --root.
+    root: str = "."
+
     # Silence per-request logs (a lot of lines when tailing big logs).
     def log_message(self, fmt, *args):
         pass
@@ -156,13 +165,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/containers":
-            containers = collect_containers(self.server.root)
+            containers = collect_containers(self.root)
             self._send_json({"containers": containers})
             return
 
         if path.startswith("/raw/"):
             rel = path[len("/raw/"):]
-            full = safe_join(self.server.root, rel)
+            full = safe_join(self.root, rel)
             if not full:
                 self._send_bytes(b"Forbidden: path escapes base directory\n",
                                  MIME_TXT, 403)
@@ -187,15 +196,15 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     p = argparse.ArgumentParser(
-        description="Serve a multi-container Squid log viewer and its logs.")
+        description="Serve a multi-container Squid and Dnsmasq log viewer and its logs.")
     p.add_argument("--root", default=os.getcwd(),
                    help="Base directory to scan for containers' logs (default: cwd).")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8090)
     a = p.parse_args()
 
+    Handler.root = a.root
     httpd = ThreadingHTTPServer((a.host, a.port), Handler)
-    httpd.root = a.root
     print(f"Serving logviewer + logs from {a.root}")
     print(f"  ->  http://{a.host}:{a.port}/")
     try:
@@ -206,7 +215,8 @@ def main():
     if containers:
         print(f"Discovered {len(containers)} container(s):")
         for c in containers:
-            print(f"  - {c['name']}: {c['path']} ({c['size']} bytes)")
+            dns = f" + dns {c['dns_path']}" if c.get("dns_path") else ""
+            print(f"  - {c['name']}: {c['path']} ({c['size']} bytes){dns}")
     else:
         print("No */proxy/logs/squid-access.log files found under the root.")
     try:
