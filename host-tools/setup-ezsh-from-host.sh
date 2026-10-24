@@ -69,8 +69,17 @@ fi
 # Generic plugin installer
 install_plugin() {
     local dir="$1" url="$2"
-    if [ -d "$dir/.git" ]; then (cd "$dir" && git pull --quiet)
-    else git clone --depth=1 "$url" "$dir"; fi
+    if [ -d "$dir/.git" ]; then
+        (cd "$dir" && git pull --quiet)
+    else
+        if [ -d "$dir" ]; then
+            # Non-git leftover (e.g. Nextcloud sync dropped .git metadata); clone needs an empty dir
+            echo "Removing existing non-git directory: $dir"
+            rm -rf "$dir"
+        fi
+        mkdir -p "$(dirname "$dir")"
+        git clone --depth=1 "$url" "$dir"
+    fi
 }
 
 # Install plugins/themes
@@ -98,8 +107,15 @@ download_fzf
 # Install marker (copy marker.py to bin, don't run install.py)
 install_marker() {
     local dir="$EZSH_CONFIG_DIR/marker"
-    if [ -d "$dir/.git" ]; then (cd "$dir" && git pull --quiet)
-    else git clone --depth=1 https://github.com/jotyGill/marker "$dir"; fi
+    if [ -d "$dir/.git" ]; then
+        (cd "$dir" && git pull --quiet)
+    else
+        if [ -d "$dir" ]; then
+            echo "Removing existing non-git directory: $dir"
+            rm -rf "$dir"
+        fi
+        git clone --depth=1 https://github.com/jotyGill/marker "$dir"
+    fi
 
     # Copy marker.py to bin
     [ -f "$dir/marker.py" ] && cp "$dir/marker.py" "$EZSH_CONFIG_DIR/bin/marker" 2>/dev/null || :
