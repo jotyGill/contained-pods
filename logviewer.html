@@ -423,7 +423,7 @@ function render(rows){
      <div class="kpi"><div class="v" style="color:var(--block)">${k.block}</div><div class="l">Blocked</div></div>
      <div class="kpi"><div class="v" style="color:var(--cache)">${k.cache}</div><div class="l">Cache hits</div></div>
      <div class="kpi"><div class="v">${k.urls.size}</div><div class="l">Unique domains</div></div>
-     <div class="kpi"><div class="v">${k.clients.size}</div><div class="l">Clients</div></div>
+     <div class="kpi" title="Unique client IPs. Pod IPs change on container restarts, so the same pod counts as several clients."><div class="v">${k.clients.size}</div><div class="l">Clients (unique pod IPs)</div></div>
    </div>
     <div class="row">
       <div class="card" style="width:260px;flex-shrink:0"><h2>Top domains (allowed vs blocked)</h2><div id="topUrls"></div></div>
